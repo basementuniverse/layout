@@ -1,0 +1,319 @@
+<style>
+
+canvas {
+  background: #ddd;
+  border: 1px solid black;
+  position: absolute;
+  top: 50px;
+  left: 50px;
+}
+
+</style>
+
+<a href="index.html">Back to examples</a><br>
+<canvas id="example"></canvas>
+
+<div class="controls">
+  <button onclick="togglePanel('hud')">Toggle HUD</button>
+  <button onclick="togglePanel('chat')">Toggle Chat</button>
+  <button onclick="togglePanel('debug-panel')">Toggle Debug Panel</button>
+</div>
+
+<script src="../build/index.js"></script>
+<script src="debug.js"></script>
+<script>
+
+const canvas = document.getElementById('example');
+const context = canvas.getContext('2d');
+
+const Debug = window.default;
+Debug.initialise();
+
+function resizeCanvas() {
+  canvas.width = window.innerWidth - 100;
+  canvas.height = window.innerHeight - 100;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+// Create a complex layout combining dock and stack layouts
+const layout = new Layout({
+  root: {
+    id: 'root',
+    type: 'dock',
+    padding: { x: '15px', y: '15px' },
+
+    // Top toolbar
+    topCenter: {
+      id: 'toolbar',
+      type: 'stack',
+      direction: 'horizontal',
+      size: { x: '80%', y: '50px' },
+      align: 'center',
+      gap: '10px',
+      children: [
+        {
+          id: 'tool1',
+          type: 'leaf',
+          size: { x: '40px', y: '40px' },
+        },
+        {
+          id: 'tool2',
+          type: 'leaf',
+          size: { x: '40px', y: '40px' },
+        },
+        {
+          id: 'tool3',
+          type: 'leaf',
+          size: { x: '40px', y: '40px' },
+        },
+        {
+          id: 'separator',
+          type: 'leaf',
+          size: { x: '2px', y: '30px' },
+        },
+        {
+          id: 'tool4',
+          type: 'leaf',
+          size: { x: '40px', y: '40px' },
+        },
+      ],
+    },
+
+    // Left panel with tabs
+    leftCenter: {
+      id: 'left-panel',
+      type: 'stack',
+      direction: 'vertical',
+      size: { x: '220px', y: '70%' },
+      gap: '5px',
+      children: [
+        {
+          id: 'tabs',
+          type: 'stack',
+          direction: 'horizontal',
+          size: { y: '30px' },
+          gap: '2px',
+          children: [
+            {
+              id: 'tab1',
+              type: 'leaf',
+              size: { x: '70px' },
+            },
+            {
+              id: 'tab2',
+              type: 'leaf',
+              size: { x: '70px' },
+            },
+            {
+              id: 'tab3',
+              type: 'leaf',
+              size: { x: '70px' },
+            },
+          ],
+        },
+        {
+          id: 'tab-content',
+          type: 'leaf',
+        },
+      ],
+    },
+
+    // Main center area
+    center: {
+      id: 'main-area',
+      type: 'dock',
+      size: { x: '60%', y: '75%' },
+
+      center: {
+        id: 'viewport',
+        type: 'leaf',
+        size: { x: '80%', y: '80%' },
+      },
+
+      topRight: {
+        id: 'hud',
+        type: 'stack',
+        direction: 'vertical',
+        size: { x: '150px', y: '120px' },
+        gap: '5px',
+        children: [
+          {
+            id: 'health',
+            type: 'leaf',
+            size: { y: '25px' },
+          },
+          {
+            id: 'mana',
+            type: 'leaf',
+            size: { y: '25px' },
+          },
+          {
+            id: 'score',
+            type: 'leaf',
+            size: { y: '25px' },
+          },
+        ],
+      },
+    },
+
+    // Right panel
+    rightCenter: {
+      id: 'properties',
+      type: 'stack',
+      direction: 'vertical',
+      size: { x: '180px', y: '80%' },
+      gap: '10px',
+      children: [
+        {
+          id: 'properties-header',
+          type: 'leaf',
+          size: { y: '30px' },
+        },
+        {
+          id: 'property-list',
+          type: 'leaf',
+        },
+      ],
+    },
+
+    // Bottom panels
+    bottomLeft: {
+      id: 'chat',
+      type: 'stack',
+      direction: 'vertical',
+      size: { x: '300px', y: '120px' },
+      gap: '5px',
+      children: [
+        {
+          id: 'chat-messages',
+          type: 'leaf',
+        },
+        {
+          id: 'chat-input',
+          type: 'leaf',
+          size: { y: '25px' },
+        },
+      ],
+    },
+
+    bottomRight: {
+      id: 'debug-panel',
+      type: 'leaf',
+      size: { x: '200px', y: '100px' },
+    },
+  },
+});
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function update() {
+  layout.update({ x: canvas.width, y: canvas.height });
+}
+
+function draw() {
+  context.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Draw layout node borders and labels
+  const nodeIds = layout.getNodeIds();
+  nodeIds.forEach(id => {
+    const node = layout.get(id);
+    if (node && node.visible) {
+      const isLeaf = !isContainer(id);
+
+      // Draw border
+      Debug.border(
+        id,
+        '',
+        { x: node.left, y: node.top },
+        {
+          size: { x: node.width, y: node.height },
+          borderColour: getNodeColor(id),
+          borderWidth: isLeaf ? 1 : 2,
+          borderStyle: isLeaf ? 'solid' : 'dashed',
+        }
+      );
+
+      // Only show labels for leaf nodes to reduce clutter
+      if (isLeaf) {
+        Debug.marker(`${id}-center`, id, node.center, {
+          markerColour: getNodeColor(id),
+          markerStyle: '.',
+          markerSize: 4,
+          showLabel: true,
+          showMarker: false,
+          labelOffset: {
+            x: -node.width / 2 + 5,
+            y: -node.height / 2 + 5,
+          },
+        });
+      }
+    }
+  });
+
+  Debug.draw(context);
+}
+
+function isContainer(id) {
+  return [
+    'root',
+    'toolbar',
+    'left-panel',
+    'tabs',
+    'main-area',
+    'hud',
+    'properties',
+    'chat',
+  ].includes(id);
+}
+
+function getNodeColor(id) {
+  const colors = {
+    // Containers
+    root: '#444',
+    toolbar: '#e74c3c',
+    'left-panel': '#3498db',
+    tabs: '#2980b9',
+    'main-area': '#2ecc71',
+    hud: '#f39c12',
+    properties: '#9b59b6',
+    chat: '#1abc9c',
+
+    // Leaf nodes
+    tool1: '#e67e22',
+    tool2: '#e67e22',
+    tool3: '#e67e22',
+    tool4: '#e67e22',
+    separator: '#7f8c8d',
+    tab1: '#3498db',
+    tab2: '#3498db',
+    tab3: '#3498db',
+    'tab-content': '#5dade2',
+    viewport: '#58d68d',
+    health: '#e74c3c',
+    mana: '#3498db',
+    score: '#f1c40f',
+    'properties-header': '#8e44ad',
+    'property-list': '#bb8fce',
+    'chat-messages': '#48c9b0',
+    'chat-input': '#45b39d',
+    'debug-panel': '#85929e',
+  };
+  return colors[id] || '#bdc3c7';
+}
+
+function togglePanel(panelId) {
+  if (layout.hasNode(panelId)) {
+    const node = layout.get(panelId);
+    layout.setVisibility(panelId, !node.visible);
+  }
+}
+
+// Start the animation loop
+loop();
+
+</script>

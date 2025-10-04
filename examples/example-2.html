@@ -1,0 +1,180 @@
+<style>
+
+canvas {
+  background: #ddd;
+  border: 1px solid black;
+  position: absolute;
+  top: 50px;
+  left: 50px;
+}
+
+</style>
+
+<a href="index.html">Back to examples</a><br>
+<canvas id="example"></canvas>
+
+<script src="../build/index.js"></script>
+<script src="debug.js"></script>
+<script>
+
+const canvas = document.getElementById('example');
+const context = canvas.getContext('2d');
+
+const Debug = window.default;
+Debug.initialise();
+
+function resizeCanvas() {
+  canvas.width = window.innerWidth - 100;
+  canvas.height = window.innerHeight - 100;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+// Create a vertical stack layout with horizontal sub-stacks
+const layout = new Layout({
+  root: {
+    id: 'root',
+    type: 'stack',
+    direction: 'vertical',
+    padding: { x: '30px', y: '30px' },
+    gap: '20px',
+    children: [
+      {
+        id: 'header',
+        type: 'stack',
+        direction: 'horizontal',
+        size: { y: '100px' },
+        gap: '15px',
+        align: 'stretch',
+        children: [
+          {
+            id: 'logo',
+            type: 'leaf',
+            size: { x: '120px' },
+          },
+          {
+            id: 'title',
+            type: 'leaf',
+            size: { x: '300px' },
+          },
+          {
+            id: 'settings',
+            type: 'leaf',
+            size: { x: 'auto' },
+          },
+        ],
+      },
+      {
+        id: 'content',
+        type: 'stack',
+        direction: 'horizontal',
+        gap: '20px',
+        children: [
+          {
+            id: 'sidebar',
+            type: 'stack',
+            direction: 'vertical',
+            size: { x: '200px' },
+            gap: '10px',
+            children: [
+              {
+                id: 'nav1',
+                type: 'leaf',
+                size: { y: '60px' },
+              },
+              {
+                id: 'nav2',
+                type: 'leaf',
+                size: { y: '60px' },
+              },
+              {
+                id: 'nav3',
+                type: 'leaf',
+                size: { y: '60px' },
+              },
+            ],
+          },
+          {
+            id: 'main',
+            type: 'leaf',
+          },
+        ],
+      },
+      {
+        id: 'footer',
+        type: 'leaf',
+        size: { y: '60px' },
+      },
+    ],
+  },
+});
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function update() {
+  layout.update({ x: canvas.width, y: canvas.height });
+}
+
+function draw() {
+  context.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Draw layout node borders and labels
+  const nodeIds = layout.getNodeIds();
+  nodeIds.forEach(id => {
+    const node = layout.get(id);
+    if (node && node.visible) {
+      // Draw border
+      Debug.border(
+        id,
+        '',
+        { x: node.left, y: node.top },
+        {
+          size: { x: node.width, y: node.height },
+          borderColour: getNodeColor(id),
+          borderWidth: 2,
+          borderStyle: isContainer(id) ? 'dashed' : 'solid',
+        }
+      );
+
+      // Draw center marker with label
+      Debug.marker(`${id}-center`, id, node.center, {
+        markerColour: getNodeColor(id),
+        markerStyle: isContainer(id) ? '+' : '.',
+        markerSize: isContainer(id) ? 10 : 6,
+      });
+    }
+  });
+
+  Debug.draw(context);
+}
+
+function isContainer(id) {
+  return ['root', 'header', 'content', 'sidebar'].includes(id);
+}
+
+function getNodeColor(id) {
+  const colors = {
+    root: '#666',
+    header: '#e74c3c',
+    logo: '#ff6b6b',
+    title: '#e67e22',
+    settings: '#f39c12',
+    content: '#2ecc71',
+    sidebar: '#27ae60',
+    nav1: '#3498db',
+    nav2: '#2980b9',
+    nav3: '#1abc9c',
+    main: '#9b59b6',
+    footer: '#34495e',
+  };
+  return colors[id] || '#ccc';
+}
+
+// Start the animation loop
+loop();
+
+</script>
