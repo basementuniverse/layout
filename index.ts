@@ -688,11 +688,14 @@ export class Layout {
     return this.calculatedNodes.get(id) || null;
   }
 
-  public setVisibility(id: string, visible: boolean = true): void {
+  public setVisibility(id: string, visible?: boolean): void {
     const node = this.nodes.get(id);
     if (!node) return;
 
-    this.setNodeVisibility(node, visible);
+    this.setNodeVisibility(
+      node,
+      visible === undefined ? !node.isVisible() : visible
+    );
   }
 
   private setNodeVisibility(node: LayoutNode, visible: boolean): void {
@@ -704,11 +707,14 @@ export class Layout {
     }
   }
 
-  public setActivated(id: string, activated: boolean = true): void {
+  public setActivated(id: string, activated?: boolean): void {
     const node = this.nodes.get(id);
     if (!node) return;
 
-    this.setNodeActivated(node, activated);
+    this.setNodeActivated(
+      node,
+      activated === undefined ? !node.isActivated() : activated
+    );
     this.dirty = true;
   }
 
@@ -752,19 +758,6 @@ export class Layout {
       size: this.cache.size,
       dirty: this.dirty,
     };
-  }
-}
-
-function nodeFactory(options: LayoutNodeOptions, layout: Layout): LayoutNode {
-  switch (options.type) {
-    case 'dock':
-      return new DockLayoutNode(options, layout);
-    case 'stack':
-      return new StackLayoutNode(options, layout);
-    case 'leaf':
-      return new LeafLayoutNode(options, layout);
-    default:
-      throw new Error(`Unknown node type: ${(options as any).type}`);
   }
 }
 
@@ -856,5 +849,22 @@ class LeafLayoutNode extends LayoutNode {
 
   protected override initializeChildren(): void {
     // Leaf nodes have no children
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Utility functions
+// -----------------------------------------------------------------------------
+
+function nodeFactory(options: LayoutNodeOptions, layout: Layout): LayoutNode {
+  switch (options.type) {
+    case 'dock':
+      return new DockLayoutNode(options, layout);
+    case 'stack':
+      return new StackLayoutNode(options, layout);
+    case 'leaf':
+      return new LeafLayoutNode(options, layout);
+    default:
+      throw new Error(`Unknown node type: ${(options as any).type}`);
   }
 }

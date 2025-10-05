@@ -309,7 +309,7 @@ function getNodeColor(id) {
 function togglePanel(panelId) {
   if (layout.hasNode(panelId)) {
     const node = layout.get(panelId);
-    layout.setVisibility(panelId, !node.visible);
+    layout.setActivated(panelId);
   }
 }
 
