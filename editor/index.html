@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>editor</title>
+    <link rel="stylesheet" href="main.css" />
+    <script src="e2.min.js"></script>
+    <script src="editor.js"></script>
+  </head>
+  <body>
+    <main>
+      <e2-app id="app" theme="dark">
+        <section class="layout">
+          <header>
+            <e2-toolbar>
+              <e2-toolbar-button label="New" icon="📄"></e2-toolbar-button>
+              <e2-toolbar-button label="Open" icon="📁"></e2-toolbar-button>
+              <e2-toolbar-button label="Save" icon="💾"></e2-toolbar-button>
+              <e2-toolbar-separator></e2-toolbar-separator>
+              <e2-toolbar-button label="Dock" icon="🔽"></e2-toolbar-button>
+              <e2-toolbar-button label="Stack" icon="⏸"></e2-toolbar-button>
+              <e2-toolbar-button label="Leaf" icon="⏹"></e2-toolbar-button>
+              <e2-toolbar-separator></e2-toolbar-separator>
+              <e2-toolbar-button label="Delete" icon="🗑️"></e2-toolbar-button>
+            </e2-toolbar>
+          </header>
+
+          <section class="main">
+            <aside class="tree">
+              <e2-collapsible-panel orientation="horizontal" resize-right>
+                <span slot="title">Layout Nodes</span>
+                <e2-tree-view id="node-tree"></e2-tree-view>
+              </e2-collapsible-panel>
+            </aside>
+
+            <section class="content">
+              <canvas id="editor-canvas"></canvas>
+              <e2-context-menu target="#editor-canvas">
+                <e2-context-menu-item
+                  label="Dock"
+                  icon="🔽"
+                  value="dock"
+                  shortcut="Ctrl+Shift+D"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  label="Stack"
+                  icon="⏸"
+                  value="stack"
+                  shortcut="Ctrl+Shift+S"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  label="Leaf"
+                  icon="⏹"
+                  value="leaf"
+                  shortcut="Ctrl+Shift+L"
+                ></e2-context-menu-item>
+                <e2-context-menu-separator></e2-context-menu-separator>
+                <e2-context-menu-item
+                  label="Delete"
+                  icon="🗑️"
+                  value="delete"
+                  shortcut="Delete"
+                ></e2-context-menu-item>
+                <e2-context-menu-separator></e2-context-menu-separator>
+                <e2-context-menu-item
+                  label="Properties"
+                  icon="⚙️"
+                  value="properties"
+                ></e2-context-menu-item>
+              </e2-context-menu>
+            </section>
+
+            <aside>
+              <e2-collapsible-panel
+                orientation="horizontal"
+                resize-left
+                collapsed
+              >
+                <span slot="title">Node Properties</span>
+                <e2-keyvalue-editor id="node-editor"></e2-keyvalue-editor>
+              </e2-collapsible-panel>
+            </aside>
+          </section>
+
+          <footer>
+            <e2-status-bar>
+              <e2-status-section slot="left" position="left">
+                <e2-status-item
+                  type="indicator"
+                  label="Selected"
+                  value="None"
+                ></e2-status-item>
+                <e2-status-item
+                  type="text"
+                  label="Mouse"
+                  value="(0, 0)"
+                ></e2-status-item>
+              </e2-status-section>
+            </e2-status-bar>
+          </footer>
+        </section>
+      </e2-app>
+    </main>
+  </body>
+</html>
