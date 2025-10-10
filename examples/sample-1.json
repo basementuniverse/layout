@@ -1,0 +1,66 @@
+{
+  "root": {
+    "id": "root",
+    "type": "dock",
+    "padding": {
+      "x": "20px",
+      "y": "20px"
+    },
+    "topLeft": {
+      "id": "menu",
+      "type": "leaf",
+      "size": {
+        "x": "200px",
+        "y": "100px"
+      }
+    },
+    "topRight": {
+      "id": "minimap",
+      "type": "leaf",
+      "size": {
+        "x": "20%"
+      },
+      "aspectRatio": 1,
+      "minSize": {
+        "x": "100px",
+        "y": "100px"
+      }
+    },
+    "center": {
+      "id": "gameplay",
+      "type": "leaf",
+      "size": {
+        "x": "60%",
+        "y": "70%"
+      },
+      "minSize": {
+        "x": "300px",
+        "y": "200px"
+      },
+      "maxSize": {
+        "x": "800px",
+        "y": "600px"
+      }
+    },
+    "bottomLeft": {
+      "id": "inventory",
+      "type": "leaf",
+      "size": {
+        "x": "180px",
+        "y": "120px"
+      },
+      "offset": {
+        "x": "0px",
+        "y": "-80px"
+      }
+    },
+    "bottomCenter": {
+      "id": "actions",
+      "type": "leaf",
+      "size": {
+        "x": "auto",
+        "y": "80px"
+      }
+    }
+  }
+}

@@ -26,32 +26,89 @@ section.main {
     / auto 1fr auto;
 }
 
-aside.tree {
-  grid-area: tree;
-}
-
-section.content {
-  grid-area: content;
-}
-
-section.content #editor-canvas {
-  width: 100%;
-  height: 100%;
-}
-
-aside.properties {
-  grid-area: properties;
-}
-
 aside e2-collapsible-panel {
   --panel-padding: 0;
   height: 100%;
+}
+
+aside.tree {
+  grid-area: tree;
 }
 
 aside.tree e2-tree-view {
   height: 100%;
 }
 
+section.content {
+  grid-area: content;
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+section.content #editor-canvas {
+  position: absolute;
+}
+
+e2-app[theme="light"] section.content #editor-canvas {
+  border: 1px solid #ccc;
+}
+
+e2-app[theme="dark"] section.content #editor-canvas {
+  border: 1px solid #333;
+}
+
+aside.properties {
+  grid-area: properties;
+}
+
 footer {
   grid-area: footer;
+}
+
+/* Theme switch */
+.theme-switch {
+  margin: 5px;
+  position: absolute;
+  right: 0;
+  display: inline-block;
+  width: 50px;
+  height: 26px;
+}
+
+.theme-switch input {display:none;}
+
+.theme-switch .slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 16px;
+  background-color: #ccc;
+  transition: .4s;
+}
+
+.theme-switch .slider:before {
+  position: absolute;
+  content: attr(data-off);
+  line-height:22px;
+  width: 22px;
+  border-radius: 11px;
+  left: 2px;
+  bottom: 2px;
+  background-color: rgb(240, 240, 240);
+  transition: .4s;
+  text-align: center;
+}
+
+.theme-switch input:checked + .slider {
+  background-color: #27669b;
+}
+
+.theme-switch input:checked + .slider:before {
+  content: attr(data-on);
+  transform: translateX(24px);
+  background-color: rgb(45, 45, 45);
 }
