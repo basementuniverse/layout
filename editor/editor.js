@@ -4,6 +4,7 @@
 // Globals and editor state
 // -----------------------------------------------------------------------------
 
+const TITLE = 'Layout';
 const EDITOR_MARGIN = 20;
 
 const CANVAS_STYLES = {
@@ -83,16 +84,27 @@ const CANVAS_STYLES = {
   },
 };
 
+const DEFAULT_LAYOUT = {
+  root: {
+    id: 'default',
+    type: 'leaf',
+  },
+};
+
 const editorState = {
   theme: 'dark',
   dirty: false,
   layout: null,
-  selectedNodeId: null,
   layoutName: '',
   layoutDefinition: null,
+  selectedNodeId: null,
   canvasSize: { x: 0, y: 0 },
   mousePosition: { x: 0, y: 0 },
   showGrid: true,
+  history: {
+    snapshots: [],
+    currentIndex: -1,
+  },
 };
 
 // Layout library
@@ -106,22 +118,35 @@ let drawGrid, drawRectangle;
 
 // DOM elements
 // Main sections
-let app, tree, content, properties;
+let app, tree, content, properties, history;
 
 // Canvas
 let canvas, context;
 
 // Toolbar buttons
-let gridToolbarButton, deleteToolbarButton, themeSwitch;
+let newToolbarButton,
+  openToolbarButton,
+  saveToolbarButton,
+  undoToolbarButton,
+  redoToolbarButton,
+  newDockNodeToolbarButton,
+  newStackNodeToolbarButton,
+  newLeafNodeToolbarButton,
+  deleteNodeToolbarButton,
+  gridToolbarButton,
+  themeSwitch;
 
 // Data views
-let treeView, propertyEditor;
+let treeView, propertyEditor, historyView;
 
 // Status bar
 let statusBar, mouseStatusBarItem, selectedStatusBarItem;
 
 // Context menu items
-let contextMenuItems;
+let newDockNodeContextMenuItem,
+  newStackNodeContextMenuItem,
+  newLeafNodeContextMenuItem,
+  deleteNodeContextMenuItem;
 
 // Prompts and dialogs
 let namePrompt;
@@ -140,11 +165,17 @@ function initializeEditor() {
   // Check if Layout library is available
   Layout = window.Layout;
   if (!Layout) {
-    console.error(
-      'Layout library not found! Make sure build/index.js is loaded.'
-    );
+    console.error('Layout library not found!');
     return;
   }
+
+  // Check if Debug library is available
+  Debug = window.default;
+  if (!Debug) {
+    console.error('Debug library not found!');
+    return;
+  }
+  Debug.initialise();
 
   // Setup canvas
   canvas = document.getElementById('editor-canvas');
@@ -163,35 +194,65 @@ function initializeEditor() {
   tree = document.querySelector('aside.tree');
   content = document.querySelector('section.content');
   properties = document.querySelector('aside.properties');
+  history = document.querySelector('aside.history');
   treeView = document.getElementById('node-tree');
   propertyEditor = document.getElementById('node-editor');
+  historyView = document.getElementById('history-list');
+  newToolbarButton = document.getElementById('new-toolbar-button');
+  openToolbarButton = document.getElementById('open-toolbar-button');
+  saveToolbarButton = document.getElementById('save-toolbar-button');
+  undoToolbarButton = document.getElementById('undo-toolbar-button');
+  redoToolbarButton = document.getElementById('redo-toolbar-button');
+  newDockNodeToolbarButton = document.getElementById(
+    'new-dock-node-toolbar-button'
+  );
+  newStackNodeToolbarButton = document.getElementById(
+    'new-stack-node-toolbar-button'
+  );
+  newLeafNodeToolbarButton = document.getElementById(
+    'new-leaf-node-toolbar-button'
+  );
+  deleteNodeToolbarButton = document.getElementById(
+    'delete-node-toolbar-button'
+  );
   gridToolbarButton = document.getElementById('grid-toolbar-button');
-  deleteToolbarButton = document.getElementById('delete-toolbar-button');
   themeSwitch = document.querySelector('.theme-switch input');
   statusBar = document.getElementById('status-bar');
   mouseStatusBarItem = document.getElementById('mouse-status');
   selectedStatusBarItem = document.getElementById('selected-status');
   namePrompt = document.getElementById('name-prompt');
-  contextMenuItems = [
-    document.getElementById('new-dock-node-context-menu-item'),
-    document.getElementById('new-stack-node-context-menu-item'),
-    document.getElementById('new-leaf-node-context-menu-item'),
-    document.getElementById('delete-node-context-menu-item'),
-  ];
+  newDockNodeContextMenuItem = document.getElementById(
+    'new-dock-node-context-menu-item'
+  );
+  newStackNodeContextMenuItem = document.getElementById(
+    'new-stack-node-context-menu-item'
+  );
+  newLeafNodeContextMenuItem = document.getElementById(
+    'new-leaf-node-context-menu-item'
+  );
+  deleteNodeContextMenuItem = document.getElementById(
+    'delete-node-context-menu-item'
+  );
 
-  // Set everything up
-  Debug = window.default;
-  Debug.initialise();
+  // Configure history view
+  if (historyView) {
+    historyView.columns = [
+      { id: 'label', label: '#', width: '2em' },
+      { id: 'action', label: 'Action' },
+      { id: 'date', label: 'Date', width: '55px' },
+      { id: 'current', label: 'Current', width: '1em' },
+    ];
+  }
+
   setupCanvas();
   startRenderLoop();
   setupEventListeners();
-  updateUIElementStates();
+  updateTitle();
+  updateStatusBar();
+  updateToolbarButtons();
   gridToolbarButton.toggleAttribute('active', editorState.showGrid);
   themeSwitch.checked = editorState.theme === 'dark';
   app.setAttribute('theme', editorState.theme);
-
-  // Load the default layout initially
-  loadLayout(getDefaultLayoutDefinition());
 
   console.log('Layout Editor initialized successfully');
 }
@@ -225,6 +286,7 @@ function setupCanvas() {
     resizeObserver.observe(tree);
     resizeObserver.observe(content);
     resizeObserver.observe(properties);
+    resizeObserver.observe(history);
   }
 }
 
@@ -257,34 +319,100 @@ function setupEventListeners() {
     );
   });
 
+  // TEMP TODO
+  canvas.addEventListener('contextmenu', e => {
+    const { offsetX: x, offsetY: y } = e;
+    console.log('Context menu at:', x, y);
+    const click = (x, y) => {
+      const ev = new MouseEvent('click', {
+        view: window,
+        bubbles: true,
+        cancelable: true,
+        offsetX: x,
+        offsetY: y,
+      });
+      content.dispatchEvent(ev);
+    };
+    click(x, y);
+  });
+
+  // Keyboard events
+  document.addEventListener('keydown', e => {
+    // Delete
+    if (e.key === 'Delete' && editorState.selectedNodeId) {
+      e.preventDefault();
+      deleteSelectedNode();
+    }
+
+    // Undo
+    if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      undo();
+      updateToolbarButtons();
+    }
+
+    // Redo
+    if (
+      (e.ctrlKey && e.shiftKey && e.key === 'Z') ||
+      (e.ctrlKey && e.key === 'y')
+    ) {
+      e.preventDefault();
+      redo();
+      updateToolbarButtons();
+    }
+  });
+
   // Toolbar button events
   document.addEventListener('toolbar-button-click', async e => {
     await handleToolbarAction(e.detail.button.getAttribute('label'));
   });
 
   // Context menu events
+  document.addEventListener('context-menu-show', e => {
+    // TODO
+    console.log('context menu displayed', e);
+
+    const { componentContext } = event.detail;
+
+    if (componentContext?.componentType === 'tree-view') {
+      const treeContext = componentContext;
+
+      if (treeContext.item) {
+        // Right-clicked on a specific tree item
+        console.log(`Right-clicked on: ${treeContext.item.label}`);
+        console.log('Item data:', treeContext.item.data);
+
+        // You can access all properties of the clicked TreeViewItem
+        // const hasChildren = treeContext.item.children && treeContext.item.children.length > 0;
+        // const isDisabled = treeContext.item.disabled;
+
+        // Show different context menu options based on the item
+        // updateContextMenuForItem(treeContext.item);
+      } else {
+        // Right-clicked on empty area of the tree view
+        console.log('Right-clicked on empty tree area');
+        // updateContextMenuForEmptyArea();
+      }
+    }
+  });
   document.addEventListener('context-menu-item-click', e => {
     handleContextMenuAction(e.detail.value);
   });
 
   // Tree view selection events
   document.addEventListener('tree-selection-change', e => {
-    handleTreeSelection(e);
+    if (e.target === treeView) {
+      handleTreeSelection(e);
+    }
+  });
+
+  // History view selection events
+  document.addEventListener('listview-selection-change', e => {
+    if (e.target === historyView) {
+      handleHistorySelection(e);
+    }
   });
 }
-
-// Get a default layout definition
-const getDefaultLayoutDefinition = () => ({
-  root: {
-    id: 'default',
-    type: 'leaf',
-  },
-});
-
-// Export for debugging
-window.LayoutEditor = {
-  editorState,
-};
 
 // -----------------------------------------------------------------------------
 // Event handlers
@@ -292,9 +420,10 @@ window.LayoutEditor = {
 
 async function handleToolbarAction(action) {
   console.log('Toolbar action:', action);
+
   switch (action) {
     case 'New':
-      loadLayout(getDefaultLayoutDefinition());
+      newLayout();
       break;
     case 'Open':
       openLayout();
@@ -305,10 +434,17 @@ async function handleToolbarAction(action) {
     case 'Dock':
     case 'Stack':
     case 'Leaf':
+      // TODO
       console.log(`TODO: Add ${action.toLowerCase()} node`);
       break;
     case 'Delete':
-      console.log('TODO: Delete selected node');
+      deleteSelectedNode();
+      break;
+    case 'Undo':
+      undo();
+      break;
+    case 'Redo':
+      redo();
       break;
     case 'Grid':
       editorState.showGrid = !editorState.showGrid;
@@ -321,14 +457,16 @@ async function handleToolbarAction(action) {
 
 function handleContextMenuAction(action) {
   console.log('Context menu action:', action);
+
   switch (action) {
     case 'dock':
     case 'stack':
     case 'leaf':
+      // TODO
       console.log(`TODO: Add ${action} node`);
       break;
     case 'delete':
-      console.log('TODO: Delete node');
+      deleteSelectedNode();
       break;
     default:
       console.log('Unknown context menu action:', action);
@@ -343,37 +481,23 @@ function handleContentAreaClick(x, y) {
   if (clickedNodeId) {
     console.log('Node selected:', clickedNodeId);
 
-    // Update selection
+    // Set selected node
     editorState.selectedNodeId = clickedNodeId;
 
-    // Sync with tree view selection
     syncTreeViewSelection(clickedNodeId);
-
-    // Update property editor
     updatePropertyEditor();
-
-    // Update status bar
     updateStatusBar();
-
-    // Update toolbar and context menu states
-    updateUIElementStates();
+    updateToolbarButtons();
   } else {
+    console.log('No node at clicked position');
+
     // Clear selection
     editorState.selectedNodeId = null;
 
-    // Clear tree view selection
-    if (treeView) {
-      treeView.clearSelection();
-    }
-
-    // Update property editor
+    treeView.clearSelection();
     updatePropertyEditor();
-
-    // Update status bar
     updateStatusBar();
-
-    // Update toolbar and context menu states
-    updateUIElementStates();
+    updateToolbarButtons();
   }
 }
 
@@ -387,23 +511,37 @@ function handleTreeSelection(event) {
     const nodeId = selectedItem.id;
     console.log('Selected node:', nodeId);
 
-    // Update editor state
+    // Set selected node
     editorState.selectedNodeId = nodeId;
 
-    // Update property editor
     updatePropertyEditor();
-
-    // Update status bar
     updateStatusBar();
-
-    // Update toolbar and context menu states
-    updateUIElementStates();
+    updateToolbarButtons();
   } else {
-    // No selection
+    console.log('No node selected in tree view');
+
+    // Clear selection
     editorState.selectedNodeId = null;
+
     updatePropertyEditor();
     updateStatusBar();
-    updateUIElementStates();
+    updateToolbarButtons();
+  }
+}
+
+function handleHistorySelection(event) {
+  console.log('History selection changed:', event.detail);
+
+  const { selectedItems } = event.detail;
+  if (selectedItems && selectedItems.length > 0) {
+    // Get the first selected item
+    const selectedItem = selectedItems[0];
+    const historyIndex = parseInt(selectedItem.id, 10);
+
+    console.log('Selected history index:', historyIndex);
+
+    // Jump to the selected history point
+    jumpToHistoryIndex(historyIndex);
   }
 }
 
@@ -417,12 +555,11 @@ function startRenderLoop() {
     requestAnimationFrame(render);
   }
 
-  // Initial render
+  // Start the render loop
   render();
 }
 
 function drawCanvas() {
-  // Clear canvas
   context.clearRect(0, 0, canvas.width, canvas.height);
 
   if (!editorState.layout) {
@@ -449,8 +586,10 @@ function drawCanvas() {
     );
   }
 
-  // Draw layout nodes
+  // Render the layout
   drawLayoutNodes();
+
+  // Update debug display
   Debug.draw(context);
 }
 
@@ -501,93 +640,13 @@ function drawNode(calculatedNode, nodeId) {
 }
 
 // -----------------------------------------------------------------------------
-// Utility functions
+// UI
 // -----------------------------------------------------------------------------
 
-function openLayout() {
-  // Create a file input element
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.json';
-
-  // Handle file selection
-  input.addEventListener('change', () => {
-    const file = input.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = e => {
-      try {
-        const data = JSON.parse(e.target?.result);
-        if (isLayoutData(data)) {
-          loadLayout(data);
-        }
-      } catch (error) {
-        console.error('Error importing data:', error);
-      }
-    };
-    reader.readAsText(file);
-  });
-
-  // Trigger file selection dialog
-  input.click();
-}
-
-function loadLayout(layoutDefinition) {
-  try {
-    console.log('Loading layout:', layoutDefinition);
-    editorState.layoutDefinition = layoutDefinition;
-
-    // Create layout instance
-    editorState.layout = new Layout(layoutDefinition);
-    console.log('Layout instance created:', editorState.layout);
-
-    // Update layout with current canvas size
-    if (editorState.canvasSize.x > 0 && editorState.canvasSize.y > 0) {
-      editorState.layout.update(editorState.canvasSize);
-    }
-
-    // Update tree view
-    updateTreeView();
-
-    // Reset selection
-    editorState.selectedNodeId = null;
-    updatePropertyEditor();
-    updateStatusBar();
-    updateUIElementStates();
-
-    console.log('Layout loaded successfully');
-    console.log('Available nodes:', editorState.layout.getNodeIds());
-  } catch (error) {
-    console.error('Error loading layout:', error);
-  }
-}
-
-async function saveLayout() {
-  if (!editorState.layoutDefinition) return;
-
-  // Get the layout name if not already set
-  if (!editorState.layoutName) {
-    editorState.layoutName = await namePrompt.show();
-  }
-
-  // Serialize the layout data and create a Blob
-  const data = JSON.stringify(editorState.layoutDefinition, null, 2);
-  const blob = new Blob([data], { type: 'application/json' });
-
-  // Create a download URL and link
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `${editorState.layoutName || 'layout'}.json`;
-
-  // Trigger download and cleanup
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-
-  E2.Toast.success('Layout saved successfully!');
+function updateTitle() {
+  document.title = `${TITLE} - ${editorState.layoutName || 'Untitled'}${
+    editorState.dirty ? ' (modified)' : ''
+  }`;
 }
 
 function updateStatusBar() {
@@ -620,28 +679,6 @@ function updateStatusBar() {
   }
 }
 
-function getNodeType(nodeId) {
-  if (!editorState.layoutDefinition) return 'unknown';
-  const nodeData = findNodeInDefinition(
-    editorState.layoutDefinition.root,
-    nodeId
-  );
-  return nodeData ? nodeData.type : 'unknown';
-}
-
-function getNodeTypeIcon(nodeType) {
-  switch (nodeType) {
-    case 'dock':
-      return '🔽';
-    case 'stack':
-      return '⏸';
-    case 'leaf':
-      return '⏹';
-    default:
-      return '?';
-  }
-}
-
 function updateTreeView() {
   if (!editorState.layout || !treeView) return;
 
@@ -654,55 +691,6 @@ function updateTreeView() {
   } catch (error) {
     console.error('Error updating tree view:', error);
   }
-}
-
-function buildTreeFromLayout(nodeOptions) {
-  const treeItem = {
-    id: nodeOptions.id,
-    label: `${nodeOptions.id} (${nodeOptions.type})`,
-    icon: getNodeTypeIcon(nodeOptions.type),
-    data: nodeOptions,
-    children: [],
-  };
-
-  // Handle different node types and their children
-  switch (nodeOptions.type) {
-    case 'dock':
-      // Dock nodes have positional children
-      const dockPositions = [
-        'topLeft',
-        'topCenter',
-        'topRight',
-        'leftCenter',
-        'center',
-        'rightCenter',
-        'bottomLeft',
-        'bottomCenter',
-        'bottomRight',
-      ];
-      for (const position of dockPositions) {
-        if (nodeOptions[position]) {
-          const childItem = buildTreeFromLayout(nodeOptions[position]);
-          childItem.label = `${position}: ${childItem.label}`;
-          treeItem.children.push(childItem);
-        }
-      }
-      break;
-    case 'stack':
-      // Stack nodes have an array of children
-      if (nodeOptions.children && Array.isArray(nodeOptions.children)) {
-        for (let i = 0; i < nodeOptions.children.length; i++) {
-          const childItem = buildTreeFromLayout(nodeOptions.children[i]);
-          childItem.label = `[${i}] ${childItem.label}`;
-          treeItem.children.push(childItem);
-        }
-      }
-      break;
-    case 'leaf':
-      // Leaf nodes have no children
-      break;
-  }
-  return treeItem;
 }
 
 function updatePropertyEditor() {
@@ -760,6 +748,301 @@ function updatePropertyEditor() {
   } catch (error) {
     console.error('Error updating property editor:', error);
   }
+}
+
+function updateHistoryView() {
+  if (!historyView) return;
+
+  try {
+    const { history } = editorState;
+
+    // Build history items
+    const items = history.snapshots.map(({ action, date }, index) => ({
+      id: index.toString(),
+      label: (index + 1).toString(),
+      data: {
+        action,
+        date: formatDateForHistoryView(date),
+        current: index === history.currentIndex ? '✅' : '⬛',
+      },
+    }));
+
+    historyView.items = items;
+
+    // Select the current history item
+    if (history.currentIndex >= 0 && history.currentIndex < items.length) {
+      historyView.deselectAll();
+      historyView.selectItem(history.currentIndex.toString());
+    }
+  } catch (error) {
+    console.error('Error updating history view:', error);
+  }
+}
+
+function updateToolbarButtons() {
+  const hasSelection = !!editorState.selectedNodeId;
+
+  // Update delete toolbar button
+  if (deleteNodeToolbarButton) {
+    if (hasSelection) {
+      deleteNodeToolbarButton.removeAttribute('disabled');
+    } else {
+      deleteNodeToolbarButton.setAttribute('disabled', '');
+    }
+  }
+
+  // Update undo/redo toolbar buttons
+  if (undoToolbarButton) {
+    if (canUndo()) {
+      undoToolbarButton.removeAttribute('disabled');
+    } else {
+      undoToolbarButton.setAttribute('disabled', '');
+    }
+  }
+  if (redoToolbarButton) {
+    if (canRedo()) {
+      redoToolbarButton.removeAttribute('disabled');
+    } else {
+      redoToolbarButton.setAttribute('disabled', '');
+    }
+  }
+
+  // Update create node buttons
+  if (newDockNodeToolbarButton) {
+    if (editorState.layout) {
+      newDockNodeToolbarButton.removeAttribute('disabled');
+    } else {
+      newDockNodeToolbarButton.setAttribute('disabled', '');
+    }
+  }
+  if (newStackNodeToolbarButton) {
+    if (editorState.layout) {
+      newStackNodeToolbarButton.removeAttribute('disabled');
+    } else {
+      newStackNodeToolbarButton.setAttribute('disabled', '');
+    }
+  }
+  if (newLeafNodeToolbarButton) {
+    if (editorState.layout) {
+      newLeafNodeToolbarButton.removeAttribute('disabled');
+    } else {
+      newLeafNodeToolbarButton.setAttribute('disabled', '');
+    }
+  }
+}
+
+function updateContextMenuButtons() {
+  // TODO
+  [
+    newDockNodeContextMenuItem,
+    newStackNodeContextMenuItem,
+    newLeafNodeContextMenuItem,
+    deleteNodeContextMenuItem,
+  ].forEach(item => {
+    // if (item) {
+    //   if (hasSelection) {
+    //     item.removeAttribute('disabled');
+    //   } else {
+    //     item.setAttribute('disabled', '');
+    //   }
+    // }
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Utility functions
+// -----------------------------------------------------------------------------
+
+function newLayout() {
+  clearHistory();
+  const snapshot = preActionSnapshot('New layout');
+
+  initialiseLayout(cloneLayoutDefinition(DEFAULT_LAYOUT));
+
+  postActionSnapshot(snapshot);
+
+  editorState.layoutName = '';
+  editorState.dirty = false;
+  updateTitle();
+
+  // Show success message
+  E2.Toast.success('New layout created!');
+}
+
+function openLayout() {
+  // Create a file input element
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+
+  // Handle file selection
+  input.addEventListener('change', () => {
+    const file = input.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const data = JSON.parse(e.target?.result);
+        if (isLayoutData(data)) {
+          clearHistory();
+          const snapshot = preActionSnapshot('Load layout');
+
+          initialiseLayout(data);
+
+          postActionSnapshot(snapshot);
+
+          editorState.layoutName = file.name.replace(/\.json$/i, '');
+          editorState.dirty = false;
+          updateTitle();
+
+          // Show success message
+          E2.Toast.success('Layout loaded successfully!');
+        }
+      } catch (error) {
+        console.error('Error importing data:', error);
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  // Trigger file selection dialog
+  input.click();
+}
+
+function initialiseLayout(layoutDefinition) {
+  try {
+    console.log('Initialising layout:', layoutDefinition);
+    editorState.layoutDefinition = layoutDefinition;
+
+    // Create layout instance
+    editorState.layout = new Layout(layoutDefinition);
+    console.log('Layout instance created:', editorState.layout);
+
+    // Update layout with current canvas size
+    if (editorState.canvasSize.x > 0 && editorState.canvasSize.y > 0) {
+      editorState.layout.update(editorState.canvasSize);
+    }
+
+    // Clear selected node
+    editorState.selectedNodeId = null;
+
+    updateTitle();
+    updateTreeView();
+    updatePropertyEditor();
+    updateStatusBar();
+    updateToolbarButtons();
+
+    console.log('Layout initialised successfully');
+    console.log('Available nodes:', editorState.layout.getNodeIds());
+  } catch (error) {
+    console.error('Error initialising layout:', error);
+    return false;
+  }
+
+  return true;
+}
+
+async function saveLayout() {
+  if (!editorState.layoutDefinition) return;
+
+  // Get the layout name if not already set
+  if (!editorState.layoutName) {
+    editorState.layoutName = await namePrompt.show();
+  }
+
+  // Serialize the layout data and create a Blob
+  const data = JSON.stringify(editorState.layoutDefinition, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+
+  // Create a download URL and link
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${editorState.layoutName || 'layout'}.json`;
+
+  // Trigger download and cleanup
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+
+  editorState.dirty = false;
+  updateTitle();
+
+  // Show success message
+  E2.Toast.success('Layout saved successfully!');
+}
+
+function getNodeType(nodeId) {
+  if (!editorState.layoutDefinition) return 'unknown';
+  const nodeData = findNodeInDefinition(
+    editorState.layoutDefinition.root,
+    nodeId
+  );
+  return nodeData ? nodeData.type : 'unknown';
+}
+
+function getNodeTypeIcon(nodeType) {
+  switch (nodeType) {
+    case 'dock':
+      return '🔽';
+    case 'stack':
+      return '⏸';
+    case 'leaf':
+      return '⏹';
+    default:
+      return '?';
+  }
+}
+
+function buildTreeFromLayout(nodeOptions) {
+  const treeItem = {
+    id: nodeOptions.id,
+    label: `${nodeOptions.id} (${nodeOptions.type})`,
+    icon: getNodeTypeIcon(nodeOptions.type),
+    data: nodeOptions,
+    children: [],
+  };
+
+  // Handle different node types and their children
+  switch (nodeOptions.type) {
+    case 'dock':
+      // Dock nodes have positional children
+      const dockPositions = [
+        'topLeft',
+        'topCenter',
+        'topRight',
+        'leftCenter',
+        'center',
+        'rightCenter',
+        'bottomLeft',
+        'bottomCenter',
+        'bottomRight',
+      ];
+      for (const position of dockPositions) {
+        if (nodeOptions[position]) {
+          const childItem = buildTreeFromLayout(nodeOptions[position]);
+          childItem.label = `${position}: ${childItem.label}`;
+          treeItem.children.push(childItem);
+        }
+      }
+      break;
+    case 'stack':
+      // Stack nodes have an array of children
+      if (nodeOptions.children && Array.isArray(nodeOptions.children)) {
+        for (let i = 0; i < nodeOptions.children.length; i++) {
+          const childItem = buildTreeFromLayout(nodeOptions.children[i]);
+          childItem.label = `[${i}] ${childItem.label}`;
+          treeItem.children.push(childItem);
+        }
+      }
+      break;
+    case 'leaf':
+      // Leaf nodes have no children
+      break;
+  }
+  return treeItem;
 }
 
 function findNodeInDefinition(node, targetId) {
@@ -846,30 +1129,11 @@ function syncTreeViewSelection(nodeId) {
   }
 }
 
-function updateUIElementStates() {
-  const hasSelection = !!editorState.selectedNodeId;
-
-  // Update delete toolbar button
-  if (deleteToolbarButton) {
-    if (hasSelection) {
-      deleteToolbarButton.removeAttribute('disabled');
-    } else {
-      deleteToolbarButton.setAttribute('disabled', '');
-    }
-  }
-
-  // Update context menu items
-  if (contextMenuItems) {
-    contextMenuItems.forEach(item => {
-      if (item) {
-        if (hasSelection) {
-          item.removeAttribute('disabled');
-        } else {
-          item.setAttribute('disabled', '');
-        }
-      }
-    });
-  }
+function formatDateForHistoryView(date) {
+  return `${date.getHours().toString().padStart(2, '0')}:${date
+    .getMinutes()
+    .toString()
+    .padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
 }
 
 // -----------------------------------------------------------------------------
@@ -1004,4 +1268,269 @@ function isPartialLayoutVec2(value) {
   if (value.x !== undefined && typeof value.x !== 'string') return false;
   if (value.y !== undefined && typeof value.y !== 'string') return false;
   return true;
+}
+
+// -----------------------------------------------------------------------------
+// Undo/Redo
+// -----------------------------------------------------------------------------
+
+function cloneLayoutDefinition(layoutDefinition) {
+  return JSON.parse(JSON.stringify(layoutDefinition));
+}
+
+function preActionSnapshot(action = 'Unknown') {
+  const { history } = editorState;
+
+  // If we're not at the end of the action history, remove everything after
+  // current position
+  if (history.currentIndex < history.snapshots.length - 1) {
+    history.snapshots = history.snapshots.slice(0, history.currentIndex + 1);
+    history.snapshots[history.snapshots.length - 1].post =
+      cloneLayoutDefinition(editorState.layoutDefinition);
+  }
+
+  const snapshot = {
+    action,
+    date: new Date(),
+    pre: cloneLayoutDefinition(editorState.layoutDefinition),
+  };
+
+  // Add new snapshot
+  history.snapshots.push(snapshot);
+  history.currentIndex = history.snapshots.length - 1;
+
+  return snapshot;
+}
+
+function postActionSnapshot(snapshot) {
+  snapshot.post = cloneLayoutDefinition(editorState.layoutDefinition);
+  updateHistoryView();
+}
+
+function undo() {
+  const { history } = editorState;
+
+  if (history.currentIndex <= 0) {
+    console.log('Nothing to undo');
+    return false;
+  }
+
+  // Move back one position
+  history.currentIndex--;
+  const snapshot = history.snapshots[history.currentIndex].post;
+
+  initialiseLayout(snapshot);
+  editorState.dirty = true;
+
+  updateTitle();
+  updateHistoryView();
+
+  console.log(
+    `Undo performed. History: ${history.currentIndex + 1}/${
+      history.snapshots.length
+    }`
+  );
+
+  return true;
+}
+
+function redo() {
+  const { history } = editorState;
+
+  if (history.currentIndex >= history.snapshots.length - 1) {
+    console.log('Nothing to redo');
+    return false;
+  }
+
+  // Move forward one position
+  history.currentIndex++;
+  const snapshot = history.snapshots[history.currentIndex].post;
+
+  // Load the snapshot (preserve history to avoid clearing it)
+  initialiseLayout(snapshot);
+  editorState.dirty = true;
+
+  updateTitle();
+  updateHistoryView();
+
+  console.log(
+    `Redo performed. History: ${history.currentIndex + 1}/${
+      history.snapshots.length
+    }`
+  );
+
+  return true;
+}
+
+function canUndo() {
+  return editorState.history.currentIndex > 0;
+}
+
+function canRedo() {
+  const { history } = editorState;
+  return history.currentIndex < history.snapshots.length - 1;
+}
+
+function clearHistory() {
+  editorState.history.snapshots = [];
+  editorState.history.currentIndex = -1;
+
+  updateHistoryView();
+
+  console.log('History cleared');
+}
+
+function jumpToHistoryIndex(targetIndex) {
+  const { history } = editorState;
+
+  if (targetIndex < 0 || targetIndex >= history.snapshots.length) {
+    console.log('Invalid history index:', targetIndex);
+    return false;
+  }
+
+  if (targetIndex === history.currentIndex) {
+    console.log('Already at history index:', targetIndex);
+    return false;
+  }
+
+  // Update current index
+  history.currentIndex = targetIndex;
+  const snapshot = history.snapshots[targetIndex].post;
+
+  // Load the snapshot (preserve history to avoid clearing it)
+  initialiseLayout(snapshot, true);
+  editorState.dirty = true;
+
+  console.log(
+    `Jumped to history index ${targetIndex + 1}/${history.snapshots.length}`
+  );
+
+  updateTitle();
+  updateHistoryView();
+  updateToolbarButtons();
+
+  return true;
+}
+
+// -----------------------------------------------------------------------------
+// Node manipulation
+// -----------------------------------------------------------------------------
+
+function deleteSelectedNode() {
+  if (!editorState.selectedNodeId || !editorState.layoutDefinition) {
+    console.log('No node selected for deletion');
+    return;
+  }
+
+  const nodeId = editorState.selectedNodeId;
+  console.log('Deleting node:', nodeId);
+
+  try {
+    const snapshot = preActionSnapshot('Delete node');
+
+    // Special case: if deleting root node, convert it to a leaf
+    if (nodeId === editorState.layoutDefinition.root.id) {
+      console.log('Converting root node to leaf');
+      editorState.layoutDefinition.root = {
+        id: nodeId,
+        type: 'leaf',
+      };
+    } else {
+      // Find and remove the node from its parent
+      const deleted = deleteNodeFromDefinition(
+        editorState.layoutDefinition.root,
+        nodeId
+      );
+      if (!deleted) {
+        console.error('Failed to delete node:', nodeId);
+        return;
+      }
+    }
+
+    // Reload layout with updated definition (preserve history)
+    const updatedDefinition = editorState.layoutDefinition;
+    initialiseLayout(updatedDefinition);
+
+    // Clear selection since the node is gone
+    editorState.selectedNodeId = null;
+    editorState.dirty = true;
+
+    updateTitle();
+    updatePropertyEditor();
+    updateStatusBar();
+    updateTreeView();
+    updateToolbarButtons();
+
+    postActionSnapshot(snapshot);
+
+    console.log('Node deleted successfully');
+  } catch (error) {
+    console.error('Error deleting node:', error);
+  }
+}
+
+function deleteNodeFromDefinition(node, targetId) {
+  if (!node || node.id === targetId) {
+    return false; // Can't delete self or invalid node
+  }
+
+  // Search in children based on node type
+  switch (node.type) {
+    case 'dock':
+      const dockPositions = [
+        'topLeft',
+        'topCenter',
+        'topRight',
+        'leftCenter',
+        'center',
+        'rightCenter',
+        'bottomLeft',
+        'bottomCenter',
+        'bottomRight',
+      ];
+
+      for (const position of dockPositions) {
+        if (node[position]) {
+          if (node[position].id === targetId) {
+            // Found the target node, delete it
+            delete node[position];
+            return true;
+          } else {
+            // Recursively search in child
+            if (deleteNodeFromDefinition(node[position], targetId)) {
+              return true;
+            }
+          }
+        }
+      }
+      break;
+
+    case 'stack':
+      if (node.children && Array.isArray(node.children)) {
+        for (let i = 0; i < node.children.length; i++) {
+          if (node.children[i].id === targetId) {
+            // Found the target node, remove it from the array
+            node.children.splice(i, 1);
+
+            // If stack becomes empty, we need to handle this case
+            if (node.children.length === 0) {
+              console.warn('Stack node became empty after deletion');
+            }
+            return true;
+          } else {
+            // Recursively search in child
+            if (deleteNodeFromDefinition(node.children[i], targetId)) {
+              return true;
+            }
+          }
+        }
+      }
+      break;
+
+    case 'leaf':
+      // Leaf nodes have no children
+      break;
+  }
+
+  return false;
 }

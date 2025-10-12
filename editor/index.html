@@ -18,27 +18,53 @@
           <!-- Toolbar -->
           <header>
             <e2-toolbar>
-              <e2-toolbar-button label="New" icon="📄"></e2-toolbar-button>
-              <e2-toolbar-button label="Open" icon="📁"></e2-toolbar-button>
-              <e2-toolbar-button label="Save" icon="💾"></e2-toolbar-button>
+              <e2-toolbar-button
+                id="new-toolbar-button"
+                label="New"
+                icon="📄"
+              ></e2-toolbar-button>
+              <e2-toolbar-button
+                id="open-toolbar-button"
+                label="Open"
+                icon="📁"
+              ></e2-toolbar-button>
+              <e2-toolbar-button
+                id="save-toolbar-button"
+                label="Save"
+                icon="💾"
+              ></e2-toolbar-button>
               <e2-toolbar-separator></e2-toolbar-separator>
               <e2-toolbar-button
+                id="undo-toolbar-button"
                 label="Undo"
                 icon="↩️"
                 disabled
               ></e2-toolbar-button>
               <e2-toolbar-button
+                id="redo-toolbar-button"
                 label="Redo"
                 icon="↪️"
                 disabled
               ></e2-toolbar-button>
               <e2-toolbar-separator></e2-toolbar-separator>
-              <e2-toolbar-button label="Dock" icon="🔽"></e2-toolbar-button>
-              <e2-toolbar-button label="Stack" icon="⏸"></e2-toolbar-button>
-              <e2-toolbar-button label="Leaf" icon="⏹"></e2-toolbar-button>
+              <e2-toolbar-button
+                id="new-dock-node-toolbar-button"
+                label="Dock"
+                icon="🔽"
+              ></e2-toolbar-button>
+              <e2-toolbar-button
+                id="new-stack-node-toolbar-button"
+                label="Stack"
+                icon="⏸"
+              ></e2-toolbar-button>
+              <e2-toolbar-button
+                id="new-leaf-node-toolbar-button"
+                label="Leaf"
+                icon="⏹"
+              ></e2-toolbar-button>
               <e2-toolbar-separator></e2-toolbar-separator>
               <e2-toolbar-button
-                id="delete-toolbar-button"
+                id="delete-node-toolbar-button"
                 label="Delete"
                 icon="🗑️"
                 disabled
@@ -62,13 +88,13 @@
             <aside class="tree">
               <e2-collapsible-panel orientation="horizontal" resize-right>
                 <span slot="title">Layout Nodes</span>
-                <e2-tree-view id="node-tree"></e2-tree-view>
+                <e2-tree-view id="node-tree" class="has-nodes"></e2-tree-view>
               </e2-collapsible-panel>
             </aside>
 
             <!-- Editor canvas -->
             <section class="content">
-              <canvas id="editor-canvas"></canvas>
+              <canvas id="editor-canvas" class="has-nodes"></canvas>
             </section>
 
             <!-- Properties panel -->
@@ -80,6 +106,18 @@
               >
                 <span slot="title">Node Properties</span>
                 <e2-keyvalue-editor id="node-editor"></e2-keyvalue-editor>
+              </e2-collapsible-panel>
+            </aside>
+
+            <!-- History panel -->
+            <aside class="history">
+              <e2-collapsible-panel
+                orientation="horizontal"
+                resize-left
+                collapsed
+              >
+                <span slot="title">History</span>
+                <e2-list-view id="history-list" view-mode="details"></e2-list-view>
               </e2-collapsible-panel>
             </aside>
           </section>
@@ -106,7 +144,7 @@
         </section>
 
         <!-- Context menu -->
-        <e2-context-menu target="#editor-canvas">
+        <e2-context-menu target=".has-nodes">
           <e2-context-menu-item
             id="new-dock-node-context-menu-item"
             label="Dock"
@@ -141,9 +179,9 @@
         <!-- Notification container -->
         <e2-notification-container
           id="notification-container"
-          position="top-right"
+          position="bottom-right"
           max-notifications="5"
-          stack-direction="down"
+          stack-direction="up"
           spacing="medium"
         >
         </e2-notification-container>

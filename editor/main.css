@@ -22,8 +22,8 @@ section.main {
   grid-area: main;
   display: grid;
   grid:
-    "tree content properties" auto
-    / auto 1fr auto;
+    "tree content properties history" auto
+    / auto 1fr auto auto;
 }
 
 aside e2-collapsible-panel {
@@ -60,6 +60,19 @@ e2-app[theme="dark"] section.content #editor-canvas {
 
 aside.properties {
   grid-area: properties;
+}
+
+aside.history {
+  grid-area: history;
+}
+
+aside.history e2-collapsible-panel {
+  --panel-collapsed-icon: '↩️';
+}
+
+aside.history e2-list-view {
+  height: 100%;
+  --header-visible: 'no';
 }
 
 footer {
