@@ -1,20 +1,16 @@
 # Layout
 
-This library provides a flexible layout system for positioning and sizing game elements in HTML5 Canvas games. It supports nested layouts with dock, stack, and leaf node types.
+A component for managing flexible layouts in HTML5 Canvas games. It supports nested layouts with dock, stack, and leaf node types.
 
-## Features
+## Installation
 
-- **Responsive layouts** - Supports pixel and percentage-based measurements
-- **Multiple layout types** - Dock, stack, and leaf nodes
-- **Aspect ratio support** - Maintain aspect ratios automatically
-- **Visibility and activation** - Control element visibility and layout participation
-- **Hierarchical control** - Parent visibility/activation affects children with override support
-- **Efficient updates** - Only recalculates when needed
+```bash
+npm install @basementuniverse/layout
+```
 
 ## Usage
 
 ```typescript
-import { vec2 } from '@basementuniverse/vec';
 import { Layout } from '@basementuniverse/layout';
 
 const layout = new Layout({
@@ -51,7 +47,7 @@ const layout = new Layout({
 });
 
 // Update layout with canvas size
-layout.update(vec2(1024, 768));
+layout.update({ x: 1024, y: 768 });
 
 // Get calculated node positions and sizes
 const headerNode = layout.get('header');
@@ -64,20 +60,64 @@ layout.setVisibility('sidebar', false);
 layout.setActivated('header', false); // Header won't affect layout calculations
 ```
 
-## Layout Node Types
+## Layout node types
+
+```typescript
+type LayoutNodeOptions = {
+  id: string;
+  type: 'dock' | 'stack' | 'leaf';
+  offset?: LayoutVec2;
+  padding?: LayoutVec2;
+  size?: Partial<LayoutVec2>;
+  minSize?: Partial<LayoutVec2>;
+  maxSize?: Partial<LayoutVec2>;
+  aspectRatio?: number;
+  visible?: boolean;
+};
+```
 
 ### Dock Layout
-Positions children at specific dock positions (topLeft, topCenter, topRight, leftCenter, center, rightCenter, bottomLeft, bottomCenter, bottomRight).
+
+Positions children at specific dock positions.
+
+```typescript
+type DockLayoutNodeOptions = {
+  type: 'dock';
+  topLeft?: LayoutNodeOptions;
+  topCenter?: LayoutNodeOptions;
+  topRight?: LayoutNodeOptions;
+  leftCenter?: LayoutNodeOptions;
+  center?: LayoutNodeOptions;
+  rightCenter?: LayoutNodeOptions;
+  bottomLeft?: LayoutNodeOptions;
+  bottomCenter?: LayoutNodeOptions;
+  bottomRight?: LayoutNodeOptions;
+};
+```
 
 ### Stack Layout
+
 Arranges children in a vertical or horizontal stack with optional alignment and spacing.
 
-- `direction`: 'vertical' | 'horizontal'
-- `align`: 'start' | 'center' | 'end' | 'stretch'
-- `gap`: Spacing between children
+```typescript
+type StackLayoutNodeOptions = {
+  type: 'stack';
+  direction: 'vertical' | 'horizontal';
+  align?: 'start' | 'center' | 'end' | 'stretch';
+  gap?: Measurement;
+  children: LayoutNodeOptions[];
+};
+```
 
 ### Leaf Layout
+
 Terminal nodes that don't contain children.
+
+```typescript
+type LeafLayoutNodeOptions = {
+  type: 'leaf';
+};
+```
 
 ## Measurements
 
@@ -92,15 +132,43 @@ All measurements support:
 
 - `update(size, offset?)` - Recalculate layout with new canvas size
 - `get(id)` - Get calculated node data by ID
-- `setVisibility(id, visible)` - Set visibility (affects children)
-- `setActivated(id, activated)` - Set activation (affects layout and children)
+- `setVisibility(id, visible)` - Set visibility (affects children). If `visible` is undefined, toggles current state.
+- `setActivated(id, activated)` - Set activation (affects layout and children). If `activated` is undefined, toggles current state.
 - `hasNode(id)` - Check if node exists
 - `getNodeIds()` - Get all node IDs
 
 ### CalculatedNode Properties
 
-Each calculated node provides:
-- Position: `center`, `topLeft`, `topRight`, `bottomLeft`, `bottomRight`
-- Edge centers: `topCenter`, `bottomCenter`, `leftCenter`, `rightCenter`
-- Bounds: `top`, `bottom`, `left`, `right`, `width`, `height`
-- State: `visible`, `activated`, `aspectRatio`
+```typescript
+type CalculatedNode = {
+  // Center
+  center: vec2;
+
+  // Corners
+  topLeft: vec2;
+  topRight: vec2;
+  bottomLeft: vec2;
+  bottomRight: vec2;
+
+  // Edge centers
+  topCenter: vec2;
+  bottomCenter: vec2;
+  leftCenter: vec2;
+  rightCenter: vec2;
+
+  // Edges
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+
+  // Size
+  width: number;
+  height: number;
+
+  // Other
+  aspectRatio: number;
+  activated: boolean;
+  visible: boolean;
+};
+```

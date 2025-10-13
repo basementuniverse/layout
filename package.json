@@ -2,7 +2,7 @@
   "name": "@basementuniverse/layout",
   "version": "0.0.1",
   "description": "Create responsive layouts for HTML5 Canvas.",
-  "author": "gordon",
+  "author": "Gordon Larrigan <gordonlarrigan@gmail.com> (https://gordonlarrigan.com)",
   "license": "MIT",
   "repository": {
     "type": "git",

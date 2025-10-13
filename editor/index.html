@@ -8,6 +8,7 @@
     <script src="../build/index.js"></script>
     <script src="e2.min.js"></script>
     <script src="canvas-helpers.js"></script>
+    <script src="color.js"></script>
     <script src="debug.js"></script>
     <script src="editor.js"></script>
   </head>
@@ -62,6 +63,188 @@
                 label="Leaf"
                 icon="⏹"
               ></e2-toolbar-button>
+              <e2-toolbar-menu
+                id="new-dock-node-toolbar-menu"
+                label="Dock"
+                icon="🔽"
+              >
+                <e2-context-menu-item
+                  id="new-dock-node-topleft-toolbar-menu-item"
+                  label="Top Left"
+                  icon="↖️"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  id="new-dock-node-topcenter-toolbar-menu-item"
+                  label="Top Center"
+                  icon="⬆️"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  id="new-dock-node-topright-toolbar-menu-item"
+                  label="Top Right"
+                  icon="↗️"
+                ></e2-context-menu-item>
+                <e2-context-menu-separator></e2-context-menu-separator>
+                <e2-context-menu-item
+                  id="new-dock-node-left-toolbar-menu-item"
+                  label="Left"
+                  icon="⬅️"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  id="new-dock-node-center-toolbar-menu-item"
+                  label="Center"
+                  icon="⏺️"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  id="new-dock-node-right-toolbar-menu-item"
+                  label="Right"
+                  icon="➡️"
+                ></e2-context-menu-item>
+                <e2-context-menu-separator></e2-context-menu-separator>
+                <e2-context-menu-item
+                  id="new-dock-node-bottomleft-toolbar-menu-item"
+                  label="Bottom Left"
+                  icon="↙️"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  id="new-dock-node-bottomcenter-toolbar-menu-item"
+                  label="Bottom Center"
+                  icon="⬇️"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  id="new-dock-node-bottomright-toolbar-menu-item"
+                  label="Bottom Right"
+                  icon="↘️"
+                ></e2-context-menu-item>
+              </e2-toolbar-menu>
+              <e2-toolbar-menu
+                id="new-stack-node-toolbar-menu"
+                label="Stack"
+                icon="⏸"
+              >
+                <e2-context-menu-item
+                  id="new-stack-node-topleft-toolbar-menu-item"
+                  label="Top Left"
+                  icon="↖️"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  id="new-stack-node-topcenter-toolbar-menu-item"
+                  label="Top Center"
+                  icon="⬆️"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  id="new-stack-node-topright-toolbar-menu-item"
+                  label="Top Right"
+                  icon="↗️"
+                ></e2-context-menu-item>
+                <e2-context-menu-separator></e2-context-menu-separator>
+                <e2-context-menu-item
+                  id="new-stack-node-left-toolbar-menu-item"
+                  label="Left"
+                  icon="⬅️"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  id="new-stack-node-center-toolbar-menu-item"
+                  label="Center"
+                  icon="⏺️"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  id="new-stack-node-right-toolbar-menu-item"
+                  label="Right"
+                  icon="➡️"
+                ></e2-context-menu-item>
+                <e2-context-menu-separator></e2-context-menu-separator>
+                <e2-context-menu-item
+                  id="new-stack-node-bottomleft-toolbar-menu-item"
+                  label="Bottom Left"
+                  icon="↙️"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  id="new-stack-node-bottomcenter-toolbar-menu-item"
+                  label="Bottom Center"
+                  icon="⬇️"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  id="new-stack-node-bottomright-toolbar-menu-item"
+                  label="Bottom Right"
+                  icon="↘️"
+                ></e2-context-menu-item>
+              </e2-toolbar-menu>
+              <e2-toolbar-menu
+                id="new-leaf-node-toolbar-menu"
+                label="Leaf"
+                icon="⏹"
+              >
+                <e2-context-menu-item
+                  id="new-leaf-node-topleft-toolbar-menu-item"
+                  label="Top Left"
+                  icon="↖️"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  id="new-leaf-node-topcenter-toolbar-menu-item"
+                  label="Top Center"
+                  icon="⬆️"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  id="new-leaf-node-topright-toolbar-menu-item"
+                  label="Top Right"
+                  icon="↗️"
+                ></e2-context-menu-item>
+                <e2-context-menu-separator></e2-context-menu-separator>
+                <e2-context-menu-item
+                  id="new-leaf-node-left-toolbar-menu-item"
+                  label="Left"
+                  icon="⬅️"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  id="new-leaf-node-center-toolbar-menu-item"
+                  label="Center"
+                  icon="⏺️"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  id="new-leaf-node-right-toolbar-menu-item"
+                  label="Right"
+                  icon="➡️"
+                ></e2-context-menu-item>
+                <e2-context-menu-separator></e2-context-menu-separator>
+                <e2-context-menu-item
+                  id="new-leaf-node-bottomleft-toolbar-menu-item"
+                  label="Bottom Left"
+                  icon="↙️"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  id="new-leaf-node-bottomcenter-toolbar-menu-item"
+                  label="Bottom Center"
+                  icon="⬇️"
+                ></e2-context-menu-item>
+                <e2-context-menu-item
+                  id="new-leaf-node-bottomright-toolbar-menu-item"
+                  label="Bottom Right"
+                  icon="↘️"
+                ></e2-context-menu-item>
+              </e2-toolbar-menu>
+              <e2-toolbar-separator
+                id="move-node-separator"
+              ></e2-toolbar-separator>
+              <e2-toolbar-button
+                id="move-node-first-button"
+                label="First"
+                icon="⏮"
+              ></e2-toolbar-button>
+              <e2-toolbar-button
+                id="move-node-backwards-button"
+                label="Backwards"
+                icon="⏪"
+              ></e2-toolbar-button>
+              <e2-toolbar-button
+                id="move-node-forwards-button"
+                label="Forwards"
+                icon="⏩"
+              ></e2-toolbar-button>
+              <e2-toolbar-button
+                id="move-node-last-button"
+                label="Last"
+                icon="⏭"
+              ></e2-toolbar-button>
               <e2-toolbar-separator></e2-toolbar-separator>
               <e2-toolbar-button
                 id="delete-node-toolbar-button"
@@ -74,6 +257,11 @@
                 id="grid-toolbar-button"
                 label="Grid"
                 icon="📏"
+              ></e2-toolbar-button>
+              <e2-toolbar-button
+                id="settings-button"
+                label="Settings"
+                icon="⚙️"
               ></e2-toolbar-button>
               <label class="theme-switch">
                 <input type="checkbox" />
@@ -117,7 +305,10 @@
                 collapsed
               >
                 <span slot="title">History</span>
-                <e2-list-view id="history-list" view-mode="details"></e2-list-view>
+                <e2-list-view
+                  id="history-list"
+                  view-mode="details"
+                ></e2-list-view>
               </e2-collapsible-panel>
             </aside>
           </section>

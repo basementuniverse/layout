@@ -5,84 +5,6 @@
 // -----------------------------------------------------------------------------
 
 const TITLE = 'Layout';
-const EDITOR_MARGIN = 20;
-
-const CANVAS_STYLES = {
-  light: {
-    background: '#ffffff',
-    foreground: '#000000',
-    grid: {
-      strokeColor: '#00000033',
-      strokeWidth: 1,
-      lineStyle: 'dotted',
-    },
-    node: {
-      fill: false,
-      stroke: true,
-      strokeColor: '#00000077',
-      strokeWidth: 2,
-      lineStyle: 'solid',
-      rounded: true,
-      borderRadius: 6,
-    },
-    selectedNode: {
-      fill: true,
-      fillColor: '#0078d422',
-      stroke: true,
-      strokeColor: '#0078d4cc',
-      strokeWidth: 2,
-      lineStyle: 'solid',
-      rounded: true,
-      borderRadius: 6,
-    },
-    selectedNodeLabel: {
-      foregroundColour: '#222222',
-      backgroundColour: '#22222222',
-    },
-    selectedNodeCenterMarker: {
-      markerColour: '#0078d4',
-      markerStyle: '+',
-      markerSize: 8,
-    },
-  },
-  dark: {
-    background: '#000000',
-    foreground: '#ffffff',
-    grid: {
-      strokeColor: '#ffffff33',
-      strokeWidth: 1,
-      lineStyle: 'dotted',
-    },
-    node: {
-      fill: false,
-      stroke: true,
-      strokeColor: '#ffffff77',
-      strokeWidth: 2,
-      lineStyle: 'solid',
-      rounded: true,
-      borderRadius: 6,
-    },
-    selectedNode: {
-      fill: true,
-      fillColor: '#0078d422',
-      stroke: true,
-      strokeColor: '#0078d4cc',
-      strokeWidth: 2,
-      lineStyle: 'solid',
-      rounded: true,
-      borderRadius: 6,
-    },
-    selectedNodeLabel: {
-      foregroundColour: '#ffffff',
-      backgroundColour: '#ffffff22',
-    },
-    selectedNodeCenterMarker: {
-      markerColour: '#0078d4',
-      markerStyle: '+',
-      markerSize: 8,
-    },
-  },
-};
 
 const DEFAULT_LAYOUT = {
   root: {
@@ -92,7 +14,6 @@ const DEFAULT_LAYOUT = {
 };
 
 const editorState = {
-  theme: 'dark',
   dirty: false,
   layout: null,
   layoutName: '',
@@ -100,10 +21,17 @@ const editorState = {
   selectedNodeId: null,
   canvasSize: { x: 0, y: 0 },
   mousePosition: { x: 0, y: 0 },
-  showGrid: true,
   history: {
     snapshots: [],
     currentIndex: -1,
+  },
+  settings: {
+    theme: 'dark',
+    editorMargin: 20,
+    showGrid: true,
+    gridSize: 10,
+    showGuide: true,
+    guideSize: { x: 1080, y: 1920 },
   },
 };
 
@@ -132,6 +60,14 @@ let newToolbarButton,
   newDockNodeToolbarButton,
   newStackNodeToolbarButton,
   newLeafNodeToolbarButton,
+  newDockNodeToolbarMenu,
+  newStackNodeToolbarMenu,
+  newLeafNodeToolbarMenu,
+  moveNodeSeparator,
+  moveNodeFirstButton,
+  moveNodeBackwardsButton,
+  moveNodeForwardsButton,
+  moveNodeLastButton,
   deleteNodeToolbarButton,
   gridToolbarButton,
   themeSwitch;
@@ -212,6 +148,22 @@ function initializeEditor() {
   newLeafNodeToolbarButton = document.getElementById(
     'new-leaf-node-toolbar-button'
   );
+  newDockNodeToolbarMenu = document.getElementById(
+    'new-dock-node-toolbar-menu'
+  );
+  newStackNodeToolbarMenu = document.getElementById(
+    'new-stack-node-toolbar-menu'
+  );
+  newLeafNodeToolbarMenu = document.getElementById(
+    'new-leaf-node-toolbar-menu'
+  );
+  moveNodeSeparator = document.getElementById('move-node-separator');
+  moveNodeFirstButton = document.getElementById('move-node-first-button');
+  moveNodeBackwardsButton = document.getElementById(
+    'move-node-backwards-button'
+  );
+  moveNodeForwardsButton = document.getElementById('move-node-forwards-button');
+  moveNodeLastButton = document.getElementById('move-node-last-button');
   deleteNodeToolbarButton = document.getElementById(
     'delete-node-toolbar-button'
   );
@@ -250,9 +202,9 @@ function initializeEditor() {
   updateTitle();
   updateStatusBar();
   updateToolbarButtons();
-  gridToolbarButton.toggleAttribute('active', editorState.showGrid);
-  themeSwitch.checked = editorState.theme === 'dark';
-  app.setAttribute('theme', editorState.theme);
+  gridToolbarButton.toggleAttribute('active', editorState.settings.showGrid);
+  themeSwitch.checked = editorState.settings.theme === 'dark';
+  app.setAttribute('theme', editorState.settings.theme);
 
   console.log('Layout Editor initialized successfully');
 }
@@ -261,12 +213,14 @@ function setupCanvas() {
   // Resize handler
   function resizeCanvas() {
     const rect = content.getBoundingClientRect();
-    canvas.width = Math.floor(rect.width) - EDITOR_MARGIN * 2;
-    canvas.height = Math.floor(rect.height) - EDITOR_MARGIN * 2;
+    canvas.width =
+      Math.floor(rect.width) - editorState.settings.editorMargin * 2;
+    canvas.height =
+      Math.floor(rect.height) - editorState.settings.editorMargin * 2;
     canvas.style.width = `${canvas.width}px`;
     canvas.style.height = `${canvas.height}px`;
-    canvas.style.top = `${EDITOR_MARGIN}px`;
-    canvas.style.left = `${EDITOR_MARGIN}px`;
+    canvas.style.top = `${editorState.settings.editorMargin}px`;
+    canvas.style.left = `${editorState.settings.editorMargin}px`;
     editorState.canvasSize.x = canvas.width;
     editorState.canvasSize.y = canvas.height;
 
@@ -294,19 +248,19 @@ function setupEventListeners() {
   // Theme switch toggle
   themeSwitch.addEventListener('change', e => {
     if (e.target.checked) {
-      editorState.theme = 'dark';
+      editorState.settings.theme = 'dark';
     } else {
-      editorState.theme = 'light';
+      editorState.settings.theme = 'light';
     }
-    app.setAttribute('theme', editorState.theme);
+    app.setAttribute('theme', editorState.settings.theme);
   });
 
   // Mouse movement tracking
   content.addEventListener('mousemove', e => {
     const rect = content.getBoundingClientRect();
     editorState.mousePosition = {
-      x: Math.round(e.clientX - rect.left) - EDITOR_MARGIN,
-      y: Math.round(e.clientY - rect.top) - EDITOR_MARGIN,
+      x: Math.round(e.clientX - rect.left) - editorState.settings.editorMargin,
+      y: Math.round(e.clientY - rect.top) - editorState.settings.editorMargin,
     };
     updateStatusBar();
   });
@@ -317,23 +271,6 @@ function setupEventListeners() {
       editorState.mousePosition.x,
       editorState.mousePosition.y
     );
-  });
-
-  // TEMP TODO
-  canvas.addEventListener('contextmenu', e => {
-    const { offsetX: x, offsetY: y } = e;
-    console.log('Context menu at:', x, y);
-    const click = (x, y) => {
-      const ev = new MouseEvent('click', {
-        view: window,
-        bubbles: true,
-        cancelable: true,
-        offsetX: x,
-        offsetY: y,
-      });
-      content.dispatchEvent(ev);
-    };
-    click(x, y);
   });
 
   // Keyboard events
@@ -369,29 +306,26 @@ function setupEventListeners() {
 
   // Context menu events
   document.addEventListener('context-menu-show', e => {
-    // TODO
-    console.log('context menu displayed', e);
+    if (e.detail.trigger === canvas) {
+      console.log('RC on canvas');
 
-    const { componentContext } = event.detail;
+      const node = findNodeAtPosition(
+        editorState.mousePosition.x,
+        editorState.mousePosition.y
+      );
 
-    if (componentContext?.componentType === 'tree-view') {
-      const treeContext = componentContext;
+      console.log('RC on canvas node:', node);
+    } else {
+      const { componentContext } = e.detail;
 
-      if (treeContext.item) {
-        // Right-clicked on a specific tree item
-        console.log(`Right-clicked on: ${treeContext.item.label}`);
-        console.log('Item data:', treeContext.item.data);
+      if (componentContext?.componentType === 'tree-view') {
+        console.log('RC on tree view');
 
-        // You can access all properties of the clicked TreeViewItem
-        // const hasChildren = treeContext.item.children && treeContext.item.children.length > 0;
-        // const isDisabled = treeContext.item.disabled;
+        const treeContext = componentContext;
 
-        // Show different context menu options based on the item
-        // updateContextMenuForItem(treeContext.item);
-      } else {
-        // Right-clicked on empty area of the tree view
-        console.log('Right-clicked on empty tree area');
-        // updateContextMenuForEmptyArea();
+        if (treeContext.item) {
+          console.log('RC on tree view item:', treeContext.item);
+        }
       }
     }
   });
@@ -447,8 +381,11 @@ async function handleToolbarAction(action) {
       redo();
       break;
     case 'Grid':
-      editorState.showGrid = !editorState.showGrid;
-      gridToolbarButton.toggleAttribute('active', editorState.showGrid);
+      editorState.settings.showGrid = !editorState.settings.showGrid;
+      gridToolbarButton.toggleAttribute(
+        'active',
+        editorState.settings.showGrid
+      );
       break;
     default:
       console.log('Unknown toolbar action:', action);
@@ -542,100 +479,6 @@ function handleHistorySelection(event) {
 
     // Jump to the selected history point
     jumpToHistoryIndex(historyIndex);
-  }
-}
-
-// -----------------------------------------------------------------------------
-// Rendering
-// -----------------------------------------------------------------------------
-
-function startRenderLoop() {
-  function render() {
-    drawCanvas();
-    requestAnimationFrame(render);
-  }
-
-  // Start the render loop
-  render();
-}
-
-function drawCanvas() {
-  context.clearRect(0, 0, canvas.width, canvas.height);
-
-  if (!editorState.layout) {
-    context.fillStyle = '#666';
-    context.font = '16px sans-serif';
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.fillText('No layout loaded', canvas.width / 2, canvas.height / 2);
-    return;
-  }
-
-  // Grid
-  if (editorState.showGrid) {
-    drawGrid(
-      { x: 0, y: 0 },
-      { x: canvas.width, y: canvas.height },
-      {
-        stroke: true,
-        ...CANVAS_STYLES[editorState.theme].grid,
-        grid: {
-          cellSize: 20,
-        },
-      }
-    );
-  }
-
-  // Render the layout
-  drawLayoutNodes();
-
-  // Update debug display
-  Debug.draw(context);
-}
-
-function drawLayoutNodes() {
-  if (!editorState.layout) return;
-
-  const nodeIds = editorState.layout.getNodeIds();
-  nodeIds.forEach(nodeId => {
-    const calculatedNode = editorState.layout.get(nodeId);
-    if (calculatedNode && calculatedNode.visible) {
-      drawNode(calculatedNode, nodeId);
-    }
-  });
-}
-
-function drawNode(calculatedNode, nodeId) {
-  drawRectangle(
-    { x: calculatedNode.left, y: calculatedNode.top },
-    { x: calculatedNode.width, y: calculatedNode.height },
-    editorState.selectedNodeId === nodeId
-      ? CANVAS_STYLES[editorState.theme].selectedNode
-      : CANVAS_STYLES[editorState.theme].node
-  );
-
-  if (editorState.selectedNodeId === nodeId) {
-    // Draw node ID label
-    Debug.marker(
-      `${nodeId}-label`,
-      nodeId,
-      {
-        x: calculatedNode.left + 4,
-        y: calculatedNode.top + 4,
-      },
-      {
-        showMarker: false,
-        showLabel: false,
-        ...CANVAS_STYLES[editorState.theme].selectedNodeLabel,
-      }
-    );
-
-    // Draw center marker
-    Debug.marker(`${nodeId}-center`, nodeId, calculatedNode.center, {
-      showLabel: false,
-      showValue: false,
-      ...CANVAS_STYLES[editorState.theme].selectedNodeCenterMarker,
-    });
   }
 }
 
@@ -781,58 +624,96 @@ function updateHistoryView() {
 
 function updateToolbarButtons() {
   const hasSelection = !!editorState.selectedNodeId;
+  const selectionIsRootNode =
+    hasSelection &&
+    editorState.selectedNodeId === editorState.layoutDefinition.root.id;
+  const selectedNode = hasSelection
+    ? findNodeById(editorState.selectedNodeId)
+    : null;
 
-  // Update delete toolbar button
-  if (deleteNodeToolbarButton) {
-    if (hasSelection) {
-      deleteNodeToolbarButton.removeAttribute('disabled');
-    } else {
-      deleteNodeToolbarButton.setAttribute('disabled', '');
-    }
-  }
-
-  // Update undo/redo toolbar buttons
-  if (undoToolbarButton) {
-    if (canUndo()) {
-      undoToolbarButton.removeAttribute('disabled');
-    } else {
-      undoToolbarButton.setAttribute('disabled', '');
-    }
-  }
-  if (redoToolbarButton) {
-    if (canRedo()) {
-      redoToolbarButton.removeAttribute('disabled');
-    } else {
-      redoToolbarButton.setAttribute('disabled', '');
-    }
+  // Delete toolbar button enabled when a non-root node is selected
+  if (hasSelection && !selectionIsRootNode) {
+    deleteNodeToolbarButton?.removeAttribute('disabled');
+  } else {
+    deleteNodeToolbarButton?.setAttribute('disabled', '');
   }
 
-  // Update create node buttons
-  if (newDockNodeToolbarButton) {
-    if (editorState.layout) {
-      newDockNodeToolbarButton.removeAttribute('disabled');
-    } else {
-      newDockNodeToolbarButton.setAttribute('disabled', '');
-    }
+  // Undo/redo toolbar buttons enabled when undo/redo available
+  if (canUndo()) {
+    undoToolbarButton?.removeAttribute('disabled');
+  } else {
+    undoToolbarButton?.setAttribute('disabled', '');
   }
-  if (newStackNodeToolbarButton) {
-    if (editorState.layout) {
-      newStackNodeToolbarButton.removeAttribute('disabled');
-    } else {
-      newStackNodeToolbarButton.setAttribute('disabled', '');
-    }
+  if (canRedo()) {
+    redoToolbarButton?.removeAttribute('disabled');
+  } else {
+    redoToolbarButton?.setAttribute('disabled', '');
   }
-  if (newLeafNodeToolbarButton) {
-    if (editorState.layout) {
-      newLeafNodeToolbarButton.removeAttribute('disabled');
-    } else {
-      newLeafNodeToolbarButton.setAttribute('disabled', '');
-    }
-  }
+
+  // Create node buttons enabled when a layout is loaded
+  // if (editorState.layout) {
+  //   newDockNodeToolbarButton?.removeAttribute('disabled');
+  //   newStackNodeToolbarButton?.removeAttribute('disabled');
+  //   newLeafNodeToolbarButton?.removeAttribute('disabled');
+  //   newDockNodeToolbarMenu?.removeAttribute('disabled');
+  //   newStackNodeToolbarMenu?.removeAttribute('disabled');
+  //   newLeafNodeToolbarMenu?.removeAttribute('disabled');
+  //   moveNodeFirstButton?.removeAttribute('disabled');
+  //   moveNodeBackwardsButton?.removeAttribute('disabled');
+  //   moveNodeForwardsButton?.removeAttribute('disabled');
+  //   moveNodeLastButton?.removeAttribute('disabled');
+  // } else {
+  //   newDockNodeToolbarButton?.setAttribute('disabled', '');
+  //   newStackNodeToolbarButton?.setAttribute('disabled', '');
+  //   newLeafNodeToolbarButton?.setAttribute('disabled', '');
+  //   newDockNodeToolbarMenu?.setAttribute('disabled', '');
+  //   newStackNodeToolbarMenu?.setAttribute('disabled', '');
+  //   newLeafNodeToolbarMenu?.setAttribute('disabled', '');
+  //   moveNodeFirstButton?.setAttribute('disabled', '');
+  //   moveNodeBackwardsButton?.setAttribute('disabled', '');
+  //   moveNodeForwardsButton?.setAttribute('disabled', '');
+  //   moveNodeLastButton?.setAttribute('disabled', '');
+  // }
+
+  /*
+  no layout:
+    all buttons disabled
+    new node buttons displayed
+    new node menus hidden
+    move node buttons hidden
+
+  layout loaded:
+    all buttons enabled
+
+  layout & no selection:
+    new node buttons displayed
+    root is leaf:
+      new node buttons enabled (except leaf)
+    root is dock:
+    root is stack:
+      new node buttons disabled
+    new node menus hidden
+    move node buttons hidden
+
+  layout & selection:
+    selection is leaf:
+      new node buttons displayed
+      new node buttons enabled (except leaf)
+      new node menus hidden
+      move node buttons hidden
+    selection is dock:
+      new node buttons hidden
+      new node menus displayed
+      move node buttons hidden
+    selection is stack:
+      new node buttons displayed
+      new node menus hidden
+      move node buttons displayed
+  */
 }
 
 function updateContextMenuButtons() {
-  // TODO
+  // TODO mostly same logic as updateToolbarButtons
   [
     newDockNodeContextMenuItem,
     newStackNodeContextMenuItem,
@@ -850,8 +731,182 @@ function updateContextMenuButtons() {
 }
 
 // -----------------------------------------------------------------------------
+// Rendering
+// -----------------------------------------------------------------------------
+
+function startRenderLoop() {
+  function render() {
+    drawCanvas();
+    requestAnimationFrame(render);
+  }
+
+  // Start the render loop
+  render();
+}
+
+function drawCanvas() {
+  context.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (!editorState.layout) {
+    context.fillStyle = '#666';
+    context.font = '16px sans-serif';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText('No layout loaded', canvas.width / 2, canvas.height / 2);
+    return;
+  }
+
+  // Grid
+  const styles = getCanvasStyles();
+  if (editorState.settings.showGrid) {
+    drawGrid(
+      { x: 0, y: 0 },
+      { x: canvas.width, y: canvas.height },
+      {
+        stroke: true,
+        ...styles[editorState.settings.theme].grid,
+        grid: {
+          cellSize: editorState.settings.gridSize,
+        },
+      }
+    );
+  }
+
+  // Render the layout
+  drawLayoutNodes(styles);
+
+  // Update debug display
+  Debug.draw(context);
+}
+
+function drawLayoutNodes(styles) {
+  if (!editorState.layout) return;
+
+  const nodeIds = editorState.layout.getNodeIds();
+  nodeIds.forEach(nodeId => {
+    const calculatedNode = editorState.layout.get(nodeId);
+    if (calculatedNode && calculatedNode.visible) {
+      drawNode(calculatedNode, nodeId, styles);
+    }
+  });
+}
+
+function drawNode(calculatedNode, nodeId, styles) {
+  drawRectangle(
+    { x: calculatedNode.left, y: calculatedNode.top },
+    { x: calculatedNode.width, y: calculatedNode.height },
+    editorState.selectedNodeId === nodeId
+      ? styles[editorState.settings.theme].selectedNode
+      : styles[editorState.settings.theme].node
+  );
+
+  if (editorState.selectedNodeId === nodeId) {
+    // Draw node ID label
+    Debug.marker(
+      `${nodeId}-label`,
+      nodeId,
+      {
+        x: calculatedNode.left + 4,
+        y: calculatedNode.top + 4,
+      },
+      {
+        showMarker: false,
+        showLabel: false,
+        ...styles[editorState.settings.theme].selectedNodeLabel,
+      }
+    );
+
+    // Draw center marker
+    Debug.marker(`${nodeId}-center`, nodeId, calculatedNode.center, {
+      showLabel: false,
+      showValue: false,
+      ...styles[editorState.settings.theme].selectedNodeCenterMarker,
+    });
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Utility functions
 // -----------------------------------------------------------------------------
+
+function getCanvasStyles() {
+  return {
+    light: {
+      background: '#ffffff',
+      foreground: '#000000',
+      grid: {
+        strokeColor: '#00000033',
+        strokeWidth: 1,
+        lineStyle: 'dotted',
+      },
+      node: {
+        fill: false,
+        stroke: true,
+        strokeColor: '#00000077',
+        strokeWidth: 2,
+        lineStyle: 'solid',
+        rounded: true,
+        borderRadius: 6,
+      },
+      selectedNode: {
+        fill: true,
+        fillColor: '#0078d422',
+        stroke: true,
+        strokeColor: '#0078d4cc',
+        strokeWidth: 2,
+        lineStyle: 'solid',
+        rounded: true,
+        borderRadius: 6,
+      },
+      selectedNodeLabel: {
+        foregroundColour: '#222222',
+        backgroundColour: '#22222222',
+      },
+      selectedNodeCenterMarker: {
+        markerColour: '#0078d4',
+        markerStyle: '+',
+        markerSize: 8,
+      },
+    },
+    dark: {
+      background: '#000000',
+      foreground: '#ffffff',
+      grid: {
+        strokeColor: '#ffffff33',
+        strokeWidth: 1,
+        lineStyle: 'dotted',
+      },
+      node: {
+        fill: false,
+        stroke: true,
+        strokeColor: '#ffffff77',
+        strokeWidth: 2,
+        lineStyle: 'solid',
+        rounded: true,
+        borderRadius: 6,
+      },
+      selectedNode: {
+        fill: true,
+        fillColor: '#0078d422',
+        stroke: true,
+        strokeColor: '#0078d4cc',
+        strokeWidth: 2,
+        lineStyle: 'solid',
+        rounded: true,
+        borderRadius: 6,
+      },
+      selectedNodeLabel: {
+        foregroundColour: '#ffffff',
+        backgroundColour: '#ffffff22',
+      },
+      selectedNodeCenterMarker: {
+        markerColour: '#0078d4',
+        markerStyle: '+',
+        markerSize: 8,
+      },
+    },
+  };
+}
 
 function newLayout() {
   clearHistory();
@@ -1043,6 +1098,11 @@ function buildTreeFromLayout(nodeOptions) {
       break;
   }
   return treeItem;
+}
+
+function findNodeById(id) {
+  if (!editorState.layoutDefinition) return null;
+  return findNodeInDefinition(editorState.layoutDefinition.root, id);
 }
 
 function findNodeInDefinition(node, targetId) {

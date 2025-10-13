@@ -3,6 +3,7 @@ html, body {
   margin: 0;
 }
 
+/* Layout */
 section.layout {
   height: 100vh;
   width: 100vw;
@@ -77,6 +78,29 @@ aside.history e2-list-view {
 
 footer {
   grid-area: footer;
+}
+
+/* Toolbar and context menu buttons */
+e2-toolbar-separator,
+e2-toolbar-button {
+  display: flex;
+}
+
+e2-toolbar-separator.hidden,
+e2-toolbar-button.hidden {
+  display: none;
+}
+
+e2-context-menu-item,
+e2-context-menu-menu,
+e2-context-menu-separator {
+  display: flex;
+}
+
+e2-context-menu-item.hidden,
+e2-context-menu-menu.hidden,
+e2-context-menu-separator.hidden {
+  display: none;
 }
 
 /* Theme switch */
