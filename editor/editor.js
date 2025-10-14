@@ -1,5 +1,12 @@
 // Layout Editor
 
+// TODO
+// - properties editor needs full object
+// - schema in properties editor for validation
+// - handle value change in properties editor
+// - move grid button into settings dialog
+// - rest of settings... (use KVEditor?)
+
 // -----------------------------------------------------------------------------
 // Globals and editor state
 // -----------------------------------------------------------------------------
@@ -13,12 +20,32 @@ const DEFAULT_LAYOUT = {
   },
 };
 
+const DEFAULT_DOCK_NODE = {
+  id: '',
+  type: 'dock',
+};
+
+const DEFAULT_STACK_NODE = {
+  id: '',
+  type: 'stack',
+  direction: 'vertical',
+  align: 'start',
+  gap: '0px',
+  children: [],
+};
+
+const DEFAULT_LEAF_NODE = {
+  id: '',
+  type: 'leaf',
+};
+
 const editorState = {
   dirty: false,
   layout: null,
   layoutName: '',
   layoutDefinition: null,
   selectedNodeId: null,
+  contextNodeId: null,
   canvasSize: { x: 0, y: 0 },
   mousePosition: { x: 0, y: 0 },
   history: {
@@ -63,13 +90,14 @@ let newToolbarButton,
   newDockNodeToolbarMenu,
   newStackNodeToolbarMenu,
   newLeafNodeToolbarMenu,
-  moveNodeSeparator,
+  moveNodeToolbarSeparator,
   moveNodeFirstButton,
   moveNodeBackwardsButton,
   moveNodeForwardsButton,
   moveNodeLastButton,
   deleteNodeToolbarButton,
   gridToolbarButton,
+  settingsToolbarButton,
   themeSwitch;
 
 // Data views
@@ -82,10 +110,18 @@ let statusBar, mouseStatusBarItem, selectedStatusBarItem;
 let newDockNodeContextMenuItem,
   newStackNodeContextMenuItem,
   newLeafNodeContextMenuItem,
+  newDockNodeContextMenuMenu,
+  newStackNodeContextMenuMenu,
+  newLeafNodeContextMenuMenu,
+  moveNodeContextMenuSeparator,
+  moveNodeFirstContextMenuItem,
+  moveNodeBackwardsContextMenuItem,
+  moveNodeForwardsContextMenuItem,
+  moveNodeLastContextMenuItem,
   deleteNodeContextMenuItem;
 
 // Prompts and dialogs
-let namePrompt;
+let namePrompt, settingsDialog, closeSettingsDialogButton;
 
 // -----------------------------------------------------------------------------
 // Initialization
@@ -157,7 +193,9 @@ function initializeEditor() {
   newLeafNodeToolbarMenu = document.getElementById(
     'new-leaf-node-toolbar-menu'
   );
-  moveNodeSeparator = document.getElementById('move-node-separator');
+  moveNodeToolbarSeparator = document.getElementById(
+    'move-node-toolbar-separator'
+  );
   moveNodeFirstButton = document.getElementById('move-node-first-button');
   moveNodeBackwardsButton = document.getElementById(
     'move-node-backwards-button'
@@ -168,11 +206,16 @@ function initializeEditor() {
     'delete-node-toolbar-button'
   );
   gridToolbarButton = document.getElementById('grid-toolbar-button');
+  settingsToolbarButton = document.getElementById('settings-toolbar-button');
   themeSwitch = document.querySelector('.theme-switch input');
   statusBar = document.getElementById('status-bar');
   mouseStatusBarItem = document.getElementById('mouse-status');
   selectedStatusBarItem = document.getElementById('selected-status');
   namePrompt = document.getElementById('name-prompt');
+  settingsDialog = document.getElementById('settings-dialog');
+  closeSettingsDialogButton = document.getElementById(
+    'close-settings-dialog-button'
+  );
   newDockNodeContextMenuItem = document.getElementById(
     'new-dock-node-context-menu-item'
   );
@@ -181,6 +224,30 @@ function initializeEditor() {
   );
   newLeafNodeContextMenuItem = document.getElementById(
     'new-leaf-node-context-menu-item'
+  );
+  newDockNodeContextMenuMenu = document.getElementById(
+    'new-dock-node-context-menu-menu'
+  );
+  newStackNodeContextMenuMenu = document.getElementById(
+    'new-stack-node-context-menu-menu'
+  );
+  newLeafNodeContextMenuMenu = document.getElementById(
+    'new-leaf-node-context-menu-menu'
+  );
+  moveNodeContextMenuSeparator = document.getElementById(
+    'move-node-context-menu-separator'
+  );
+  moveNodeFirstContextMenuItem = document.getElementById(
+    'move-node-first-context-menu-item'
+  );
+  moveNodeBackwardsContextMenuItem = document.getElementById(
+    'move-node-backwards-context-menu-item'
+  );
+  moveNodeForwardsContextMenuItem = document.getElementById(
+    'move-node-forwards-context-menu-item'
+  );
+  moveNodeLastContextMenuItem = document.getElementById(
+    'move-node-last-context-menu-item'
   );
   deleteNodeContextMenuItem = document.getElementById(
     'delete-node-context-menu-item'
@@ -278,11 +345,11 @@ function setupEventListeners() {
     // Delete
     if (e.key === 'Delete' && editorState.selectedNodeId) {
       e.preventDefault();
-      deleteSelectedNode();
+      deleteNode(editorState.selectedNodeId);
     }
 
     // Undo
-    if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+    if (e.ctrlKey && e.key.toLowerCase() === 'z' && !e.shiftKey) {
       e.preventDefault();
       undo();
       updateToolbarButtons();
@@ -290,47 +357,197 @@ function setupEventListeners() {
 
     // Redo
     if (
-      (e.ctrlKey && e.shiftKey && e.key === 'Z') ||
-      (e.ctrlKey && e.key === 'y')
+      (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'z') ||
+      (e.ctrlKey && e.key.toLowerCase() === 'y')
     ) {
       e.preventDefault();
       redo();
       updateToolbarButtons();
     }
+
+    const hasLayout = !!editorState.layoutDefinition;
+    const hasSelection = !!editorState.selectedNodeId;
+    const selectionIsRootNode =
+      hasSelection &&
+      editorState.selectedNodeId === editorState.layoutDefinition.root.id;
+    const selectedNode = hasSelection
+      ? findNodeById(editorState.selectedNodeId)
+      : null;
+    const selectedNodeParent = hasSelection
+      ? findParentNodeById(editorState.selectedNodeId)
+      : null;
+
+    // Create dock node
+    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'd') {
+      e.preventDefault();
+
+      if (!hasLayout) return;
+      if (
+        !hasSelection ||
+        (selectionIsRootNode && selectedNode.type === 'leaf')
+      ) {
+        replaceRootNode('dock');
+        return;
+      }
+      switch (selectedNode.type) {
+        case 'leaf':
+          replaceNode(editorState.selectedNodeId, 'dock');
+          break;
+        case 'dock':
+          console.warn('Cannot add node to dock node using keyboard shortcut');
+          break;
+        case 'stack':
+          createNodeInStack(selectedNode, 'dock');
+          break;
+        default:
+          break;
+      }
+    }
+
+    // Create stack node
+    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+
+      if (!hasLayout) return;
+      if (
+        !hasSelection ||
+        (selectionIsRootNode && selectedNode.type === 'leaf')
+      ) {
+        replaceRootNode('stack');
+        return;
+      }
+      switch (selectedNode.type) {
+        case 'leaf':
+          replaceNode(editorState.selectedNodeId, 'stack');
+          break;
+        case 'dock':
+          console.warn('Cannot add node to dock node using keyboard shortcut');
+          break;
+        case 'stack':
+          createNodeInStack(selectedNode, 'stack');
+          break;
+        default:
+          break;
+      }
+    }
+
+    // Create leaf node
+    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'l') {
+      e.preventDefault();
+
+      if (!hasLayout) return;
+      if (!hasSelection) return;
+      switch (selectedNode.type) {
+        case 'leaf':
+          break;
+        case 'dock':
+          console.warn('Cannot add node to dock node using this action');
+          break;
+        case 'stack':
+          createNodeInStack(selectedNode, 'leaf');
+          break;
+        default:
+          break;
+      }
+    }
+
+    // Move node first
+    if (e.ctrlKey && e.shiftKey && e.key === 'PageUp') {
+      e.preventDefault();
+
+      if (!hasLayout) return;
+      if (!hasSelection) return;
+      if (selectedNodeParent.type !== 'stack') {
+        console.warn('Cannot move node in non-stack parent');
+        return;
+      }
+      moveNodeInStack(selectedNodeParent, editorState.selectedNodeId, 'first');
+    }
+
+    // Move node backwards
+    if (e.ctrlKey && e.shiftKey && e.key === 'ArrowUp') {
+      e.preventDefault();
+
+      if (!hasLayout) return;
+      if (!hasSelection) return;
+      if (selectedNodeParent.type !== 'stack') {
+        console.warn('Cannot move node in non-stack parent');
+        return;
+      }
+      moveNodeInStack(
+        selectedNodeParent,
+        editorState.selectedNodeId,
+        'backwards'
+      );
+    }
+
+    // Move node first
+    if (e.ctrlKey && e.shiftKey && e.key === 'ArrowDown') {
+      e.preventDefault();
+
+      if (!hasLayout) return;
+      if (!hasSelection) return;
+      if (selectedNodeParent.type !== 'stack') {
+        console.warn('Cannot move node in non-stack parent');
+        return;
+      }
+      moveNodeInStack(
+        selectedNodeParent,
+        editorState.selectedNodeId,
+        'forwards'
+      );
+    }
+
+    // Move node first
+    if (e.ctrlKey && e.shiftKey && e.key === 'PageDown') {
+      e.preventDefault();
+
+      if (!hasLayout) return;
+      if (!hasSelection) return;
+      if (selectedNodeParent.type !== 'stack') {
+        console.warn('Cannot move node in non-stack parent');
+        return;
+      }
+      moveNodeInStack(selectedNodeParent, editorState.selectedNodeId, 'last');
+    }
   });
 
   // Toolbar button events
   document.addEventListener('toolbar-button-click', async e => {
-    await handleToolbarAction(e.detail.button.getAttribute('label'));
+    await handleToolbarAction(e.detail.button.getAttribute('action'));
   });
 
   // Context menu events
   document.addEventListener('context-menu-show', e => {
     if (e.detail.trigger === canvas) {
-      console.log('RC on canvas');
-
-      const node = findNodeAtPosition(
+      const nodeId = findNodeIdAtPosition(
         editorState.mousePosition.x,
         editorState.mousePosition.y
       );
+      const node = findNodeById(nodeId);
 
-      console.log('RC on canvas node:', node);
+      console.log(node);
+
+      editorState.contextNodeId = node?.id || null;
+      updateContextMenuButtons();
     } else {
       const { componentContext } = e.detail;
 
       if (componentContext?.componentType === 'tree-view') {
-        console.log('RC on tree view');
-
+        let node = null;
         const treeContext = componentContext;
 
         if (treeContext.item) {
-          console.log('RC on tree view item:', treeContext.item);
+          node = treeContext.item.data;
         }
+
+        editorState.contextNodeId = node?.id || null;
+        updateContextMenuButtons();
       }
     }
   });
   document.addEventListener('context-menu-item-click', e => {
-    handleContextMenuAction(e.detail.value);
+    handleContextMenuAction(e.detail.item.getAttribute('action'));
   });
 
   // Tree view selection events
@@ -346,6 +563,11 @@ function setupEventListeners() {
       handleHistorySelection(e);
     }
   });
+
+  // Close settings dialog
+  closeSettingsDialogButton?.addEventListener('click', e => {
+    settingsDialog?.close();
+  });
 }
 
 // -----------------------------------------------------------------------------
@@ -355,58 +577,795 @@ function setupEventListeners() {
 async function handleToolbarAction(action) {
   console.log('Toolbar action:', action);
 
+  const hasLayout = !!editorState.layoutDefinition;
+  const hasSelection = !!editorState.selectedNodeId;
+  const selectionIsRootNode =
+    hasSelection &&
+    editorState.selectedNodeId === editorState.layoutDefinition.root.id;
+  const selectedNode = hasSelection
+    ? findNodeById(editorState.selectedNodeId)
+    : null;
+  const selectedNodeParent = hasSelection
+    ? findParentNodeById(editorState.selectedNodeId)
+    : null;
+
   switch (action) {
-    case 'New':
+    case 'new':
       newLayout();
       break;
-    case 'Open':
+    case 'open':
       openLayout();
       break;
-    case 'Save':
+    case 'save':
       await saveLayout();
       break;
-    case 'Dock':
-    case 'Stack':
-    case 'Leaf':
-      // TODO
-      console.log(`TODO: Add ${action.toLowerCase()} node`);
-      break;
-    case 'Delete':
-      deleteSelectedNode();
-      break;
-    case 'Undo':
+    case 'undo':
       undo();
       break;
-    case 'Redo':
+    case 'redo':
       redo();
       break;
-    case 'Grid':
+
+    // New node
+    case 'new-dock-node':
+      if (!hasLayout) break;
+      if (
+        !hasSelection ||
+        (selectionIsRootNode && selectedNode.type === 'leaf')
+      ) {
+        replaceRootNode('dock');
+        break;
+      }
+      switch (selectedNode.type) {
+        case 'leaf':
+          replaceNode(editorState.selectedNodeId, 'dock');
+          break;
+        case 'dock':
+          console.warn('Cannot add node to dock node using this action');
+          break;
+        case 'stack':
+          createNodeInStack(selectedNode, 'dock');
+          break;
+        default:
+          break;
+      }
+      break;
+    case 'new-stack-node':
+      if (!hasLayout) break;
+      if (
+        !hasSelection ||
+        (selectionIsRootNode && selectedNode.type === 'leaf')
+      ) {
+        replaceRootNode('stack');
+        break;
+      }
+      switch (selectedNode.type) {
+        case 'leaf':
+          replaceNode(editorState.selectedNodeId, 'stack');
+          break;
+        case 'dock':
+          console.warn('Cannot add node to dock node using this action');
+          break;
+        case 'stack':
+          createNodeInStack(selectedNode, 'stack');
+          break;
+        default:
+          break;
+      }
+      break;
+    case 'new-leaf-node':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      switch (selectedNode.type) {
+        case 'leaf':
+          break;
+        case 'dock':
+          console.warn('Cannot add node to dock node using this action');
+          break;
+        case 'stack':
+          createNodeInStack(selectedNode, 'leaf');
+          break;
+        default:
+          break;
+      }
+      break;
+
+    // Move node in stack
+    case 'move-node-first':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNodeParent.type !== 'stack') {
+        console.warn('Cannot move node in non-stack parent');
+        break;
+      }
+      moveNodeInStack(selectedNodeParent, editorState.selectedNodeId, 'first');
+      break;
+    case 'move-node-backwards':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNodeParent.type !== 'stack') {
+        console.warn('Cannot move node in non-stack parent');
+        break;
+      }
+      moveNodeInStack(
+        selectedNodeParent,
+        editorState.selectedNodeId,
+        'backwards'
+      );
+      break;
+    case 'move-node-forwards':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNodeParent.type !== 'stack') {
+        console.warn('Cannot move node in non-stack parent');
+        break;
+      }
+      moveNodeInStack(
+        selectedNodeParent,
+        editorState.selectedNodeId,
+        'forwards'
+      );
+      break;
+    case 'move-node-last':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNodeParent.type !== 'stack') {
+        console.warn('Cannot move node in non-stack parent');
+        break;
+      }
+      moveNodeInStack(selectedNodeParent, editorState.selectedNodeId, 'last');
+      break;
+
+    // Delete node
+    case 'delete-node':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      deleteNode(editorState.selectedNodeId);
+      break;
+    case 'toggle-grid':
+      // TODO move this to settings dialog
       editorState.settings.showGrid = !editorState.settings.showGrid;
       gridToolbarButton.toggleAttribute(
         'active',
         editorState.settings.showGrid
       );
       break;
+    case 'settings':
+      settingsDialog?.showModal();
+      break;
     default:
-      console.log('Unknown toolbar action:', action);
+      console.warn('Unknown toolbar action:', action);
   }
 }
 
 function handleContextMenuAction(action) {
   console.log('Context menu action:', action);
 
+  const hasLayout = !!editorState.layoutDefinition;
+
+  const hasSelection = !!editorState.selectedNodeId;
+  const selectedNode = hasSelection
+    ? findNodeById(editorState.selectedNodeId)
+    : null;
+
+  const hasContext = !!editorState.contextNodeId;
+  const contextIsRootNode =
+    hasContext &&
+    editorState.contextNodeId === editorState.layoutDefinition.root.id;
+  const contextNode = hasContext
+    ? findNodeById(editorState.contextNodeId)
+    : null;
+  const contextNodeParent = hasContext
+    ? findParentNodeById(editorState.contextNodeId)
+    : null;
+
   switch (action) {
-    case 'dock':
-    case 'stack':
-    case 'leaf':
-      // TODO
-      console.log(`TODO: Add ${action} node`);
+    // New node
+    case 'new-dock-node-context':
+      if (!hasLayout) break;
+      if (!hasContext || (contextIsRootNode && contextNode.type === 'leaf')) {
+        replaceRootNode('dock');
+        break;
+      }
+      switch (contextNode.type) {
+        case 'leaf':
+          replaceNode(editorState.contextNodeId, 'dock');
+          break;
+        case 'dock':
+          console.warn('Cannot add node to dock node using this action');
+          break;
+        case 'stack':
+          createNodeInStack(contextNode, 'dock');
+          break;
+        default:
+          break;
+      }
       break;
-    case 'delete':
-      deleteSelectedNode();
+    case 'new-stack-node-context':
+      if (!hasLayout) break;
+      if (!hasContext || (contextIsRootNode && contextNode.type === 'leaf')) {
+        replaceRootNode('stack');
+        break;
+      }
+      switch (contextNode.type) {
+        case 'leaf':
+          replaceNode(editorState.contextNodeId, 'stack');
+          break;
+        case 'dock':
+          console.warn('Cannot add node to dock node using this action');
+          break;
+        case 'stack':
+          createNodeInStack(contextNode, 'stack');
+          break;
+        default:
+          break;
+      }
+      break;
+    case 'new-leaf-node-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      switch (contextNode.type) {
+        case 'leaf':
+          break;
+        case 'dock':
+          console.warn('Cannot add node to dock node using this action');
+          break;
+        case 'stack':
+          createNodeInStack(contextNode, 'leaf');
+          break;
+        default:
+          break;
+      }
+      break;
+
+    // New dock node in dock node slot (context menu)
+    case 'new-dock-node-topleft-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'topLeft', 'dock');
+      break;
+    case 'new-dock-node-topcenter-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'topCenter', 'dock');
+      break;
+    case 'new-dock-node-topright-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'topRight', 'dock');
+      break;
+    case 'new-dock-node-left-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'left', 'dock');
+      break;
+    case 'new-dock-node-center-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'center', 'dock');
+      break;
+    case 'new-dock-node-right-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'right', 'dock');
+      break;
+    case 'new-dock-node-bottomleft-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'bottomLeft', 'dock');
+      break;
+    case 'new-dock-node-bottomcenter-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'bottomCenter', 'dock');
+      break;
+    case 'new-dock-node-bottomright-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'bottomRight', 'dock');
+      break;
+
+    // New stack node in dock node slot (context menu)
+    case 'new-stack-node-topleft-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'topLeft', 'stack');
+      break;
+    case 'new-stack-node-topcenter-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'topCenter', 'stack');
+      break;
+    case 'new-stack-node-topright-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'topRight', 'stack');
+      break;
+    case 'new-stack-node-left-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'left', 'stack');
+      break;
+    case 'new-stack-node-center-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'center', 'stack');
+      break;
+    case 'new-stack-node-right-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'right', 'stack');
+      break;
+    case 'new-stack-node-bottomleft-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'bottomLeft', 'stack');
+      break;
+    case 'new-stack-node-bottomcenter-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'bottomCenter', 'stack');
+      break;
+    case 'new-stack-node-bottomright-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'bottomRight', 'stack');
+      break;
+
+    // New leaf node in dock node slot (context menu)
+    case 'new-leaf-node-topleft-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'topLeft', 'leaf');
+      break;
+    case 'new-leaf-node-topcenter-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'topCenter', 'leaf');
+      break;
+    case 'new-leaf-node-topright-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'topRight', 'leaf');
+      break;
+    case 'new-leaf-node-left-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'left', 'leaf');
+      break;
+    case 'new-leaf-node-center-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'center', 'leaf');
+      break;
+    case 'new-leaf-node-right-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'right', 'leaf');
+      break;
+    case 'new-leaf-node-bottomleft-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'bottomLeft', 'leaf');
+      break;
+    case 'new-leaf-node-bottomcenter-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'bottomCenter', 'leaf');
+      break;
+    case 'new-leaf-node-bottomright-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(contextNode, 'bottomRight', 'leaf');
+      break;
+
+    // New dock node in dock node slot (toolbar menu)
+    case 'new-dock-node-topleft':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'topLeft', 'dock');
+      break;
+    case 'new-dock-node-topcenter':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'topCenter', 'dock');
+      break;
+    case 'new-dock-node-topright':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'topRight', 'dock');
+      break;
+    case 'new-dock-node-left':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'left', 'dock');
+      break;
+    case 'new-dock-node-center':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'center', 'dock');
+      break;
+    case 'new-dock-node-right':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'right', 'dock');
+      break;
+    case 'new-dock-node-bottomleft':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'bottomLeft', 'dock');
+      break;
+    case 'new-dock-node-bottomcenter':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'bottomCenter', 'dock');
+      break;
+    case 'new-dock-node-bottomright':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'bottomRight', 'dock');
+      break;
+
+    // New stack node in dock node slot (toolbar menu)
+    case 'new-stack-node-topleft':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'topLeft', 'stack');
+      break;
+    case 'new-stack-node-topcenter':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'topCenter', 'stack');
+      break;
+    case 'new-stack-node-topright':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'topRight', 'stack');
+      break;
+    case 'new-stack-node-left':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'left', 'stack');
+      break;
+    case 'new-stack-node-center':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'center', 'stack');
+      break;
+    case 'new-stack-node-right':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'right', 'stack');
+      break;
+    case 'new-stack-node-bottomleft':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'bottomLeft', 'stack');
+      break;
+    case 'new-stack-node-bottomcenter':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'bottomCenter', 'stack');
+      break;
+    case 'new-stack-node-bottomright':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'bottomRight', 'stack');
+      break;
+
+    // New leaf node in dock node slot (toolbar menu)
+    case 'new-leaf-node-topleft':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'topLeft', 'leaf');
+      break;
+    case 'new-leaf-node-topcenter':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'topCenter', 'leaf');
+      break;
+    case 'new-leaf-node-topright':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'topRight', 'leaf');
+      break;
+    case 'new-leaf-node-left':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'left', 'leaf');
+      break;
+    case 'new-leaf-node-center':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'center', 'leaf');
+      break;
+    case 'new-leaf-node-right':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'right', 'leaf');
+      break;
+    case 'new-leaf-node-bottomleft':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'bottomLeft', 'leaf');
+      break;
+    case 'new-leaf-node-bottomcenter':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'bottomCenter', 'leaf');
+      break;
+    case 'new-leaf-node-bottomright':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectedNode.type !== 'dock') {
+        console.warn('Cannot add node to non-dock node using this action');
+        break;
+      }
+      createNodeInDock(selectedNode, 'bottomRight', 'leaf');
+      break;
+
+    // Move node in stack
+    case 'move-node-first-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNodeParent.type !== 'stack') {
+        console.warn('Cannot move node in non-stack parent');
+        break;
+      }
+      moveNodeInStack(contextNodeParent, editorState.contextNodeId, 'first');
+      break;
+    case 'move-node-backwards-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNodeParent.type !== 'stack') {
+        console.warn('Cannot move node in non-stack parent');
+        break;
+      }
+      moveNodeInStack(
+        contextNodeParent,
+        editorState.contextNodeId,
+        'backwards'
+      );
+      break;
+    case 'move-node-forwards-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNodeParent.type !== 'stack') {
+        console.warn('Cannot move node in non-stack parent');
+        break;
+      }
+      moveNodeInStack(contextNodeParent, editorState.contextNodeId, 'forwards');
+      break;
+    case 'move-node-last-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextNodeParent.type !== 'stack') {
+        console.warn('Cannot move node in non-stack parent');
+        break;
+      }
+      moveNodeInStack(contextNodeParent, editorState.contextNodeId, 'last');
+      break;
+
+    // Delete node
+    case 'delete-node-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      deleteNode(editorState.contextNodeId);
       break;
     default:
-      console.log('Unknown context menu action:', action);
+      console.warn('Unknown context menu action:', action);
   }
 }
 
@@ -414,7 +1373,7 @@ function handleContentAreaClick(x, y) {
   if (!editorState.layout) return;
 
   // Find the node at the clicked position
-  const clickedNodeId = findNodeAtPosition(x, y);
+  const clickedNodeId = findNodeIdAtPosition(x, y);
   if (clickedNodeId) {
     console.log('Node selected:', clickedNodeId);
 
@@ -624,15 +1583,15 @@ function updateHistoryView() {
 
 function updateToolbarButtons() {
   const hasSelection = !!editorState.selectedNodeId;
-  const selectionIsRootNode =
-    hasSelection &&
-    editorState.selectedNodeId === editorState.layoutDefinition.root.id;
   const selectedNode = hasSelection
     ? findNodeById(editorState.selectedNodeId)
     : null;
+  const selectedNodeParent = hasSelection
+    ? findParentNodeById(editorState.selectedNodeId)
+    : null;
 
   // Delete toolbar button enabled when a non-root node is selected
-  if (hasSelection && !selectionIsRootNode) {
+  if (hasSelection) {
     deleteNodeToolbarButton?.removeAttribute('disabled');
   } else {
     deleteNodeToolbarButton?.setAttribute('disabled', '');
@@ -650,84 +1609,272 @@ function updateToolbarButtons() {
     redoToolbarButton?.setAttribute('disabled', '');
   }
 
-  // Create node buttons enabled when a layout is loaded
-  // if (editorState.layout) {
-  //   newDockNodeToolbarButton?.removeAttribute('disabled');
-  //   newStackNodeToolbarButton?.removeAttribute('disabled');
-  //   newLeafNodeToolbarButton?.removeAttribute('disabled');
-  //   newDockNodeToolbarMenu?.removeAttribute('disabled');
-  //   newStackNodeToolbarMenu?.removeAttribute('disabled');
-  //   newLeafNodeToolbarMenu?.removeAttribute('disabled');
-  //   moveNodeFirstButton?.removeAttribute('disabled');
-  //   moveNodeBackwardsButton?.removeAttribute('disabled');
-  //   moveNodeForwardsButton?.removeAttribute('disabled');
-  //   moveNodeLastButton?.removeAttribute('disabled');
-  // } else {
-  //   newDockNodeToolbarButton?.setAttribute('disabled', '');
-  //   newStackNodeToolbarButton?.setAttribute('disabled', '');
-  //   newLeafNodeToolbarButton?.setAttribute('disabled', '');
-  //   newDockNodeToolbarMenu?.setAttribute('disabled', '');
-  //   newStackNodeToolbarMenu?.setAttribute('disabled', '');
-  //   newLeafNodeToolbarMenu?.setAttribute('disabled', '');
-  //   moveNodeFirstButton?.setAttribute('disabled', '');
-  //   moveNodeBackwardsButton?.setAttribute('disabled', '');
-  //   moveNodeForwardsButton?.setAttribute('disabled', '');
-  //   moveNodeLastButton?.setAttribute('disabled', '');
-  // }
+  // Toolbar buttons
+  // Check if a layout is available
+  if (editorState.layout) {
+    // All buttons enabled
+    newDockNodeToolbarButton?.removeAttribute('disabled');
+    newStackNodeToolbarButton?.removeAttribute('disabled');
+    newLeafNodeToolbarButton?.removeAttribute('disabled');
+    newDockNodeToolbarMenu?.removeAttribute('disabled');
+    newStackNodeToolbarMenu?.removeAttribute('disabled');
+    newLeafNodeToolbarMenu?.removeAttribute('disabled');
+    moveNodeFirstButton?.removeAttribute('disabled');
+    moveNodeBackwardsButton?.removeAttribute('disabled');
+    moveNodeForwardsButton?.removeAttribute('disabled');
+    moveNodeLastButton?.removeAttribute('disabled');
+  } else {
+    // No layout available
+    // All buttons disabled
+    newDockNodeToolbarButton?.setAttribute('disabled', '');
+    newStackNodeToolbarButton?.setAttribute('disabled', '');
+    newLeafNodeToolbarButton?.setAttribute('disabled', '');
+    newDockNodeToolbarMenu?.setAttribute('disabled', '');
+    newStackNodeToolbarMenu?.setAttribute('disabled', '');
+    newLeafNodeToolbarMenu?.setAttribute('disabled', '');
+    moveNodeFirstButton?.setAttribute('disabled', '');
+    moveNodeBackwardsButton?.setAttribute('disabled', '');
+    moveNodeForwardsButton?.setAttribute('disabled', '');
+    moveNodeLastButton?.setAttribute('disabled', '');
 
-  /*
-  no layout:
-    all buttons disabled
-    new node buttons displayed
-    new node menus hidden
-    move node buttons hidden
+    // New node buttons displayed
+    newDockNodeToolbarButton?.classList.remove('hidden');
+    newStackNodeToolbarButton?.classList.remove('hidden');
+    newLeafNodeToolbarButton?.classList.remove('hidden');
 
-  layout loaded:
-    all buttons enabled
+    // New node menus hidden
+    newDockNodeToolbarMenu?.classList.add('hidden');
+    newStackNodeToolbarMenu?.classList.add('hidden');
+    newLeafNodeToolbarMenu?.classList.add('hidden');
+  }
 
-  layout & no selection:
-    new node buttons displayed
-    root is leaf:
-      new node buttons enabled (except leaf)
-    root is dock:
-    root is stack:
-      new node buttons disabled
-    new node menus hidden
-    move node buttons hidden
+  // Layout available and no selection
+  if (editorState.layout && !hasSelection) {
+    // New node buttons displayed
+    newDockNodeToolbarButton?.classList.remove('hidden');
+    newStackNodeToolbarButton?.classList.remove('hidden');
+    newLeafNodeToolbarButton?.classList.remove('hidden');
 
-  layout & selection:
-    selection is leaf:
-      new node buttons displayed
-      new node buttons enabled (except leaf)
-      new node menus hidden
-      move node buttons hidden
-    selection is dock:
-      new node buttons hidden
-      new node menus displayed
-      move node buttons hidden
-    selection is stack:
-      new node buttons displayed
-      new node menus hidden
-      move node buttons displayed
-  */
+    // New node menus hidden
+    newDockNodeToolbarMenu?.classList.add('hidden');
+    newStackNodeToolbarMenu?.classList.add('hidden');
+    newLeafNodeToolbarMenu?.classList.add('hidden');
+
+    // Enable based on root node type
+    switch (editorState.layoutDefinition.root.type) {
+      case 'leaf':
+        newDockNodeToolbarButton?.removeAttribute('disabled');
+        newStackNodeToolbarButton?.removeAttribute('disabled');
+        newLeafNodeToolbarButton?.setAttribute('disabled', '');
+        break;
+      case 'dock':
+      case 'stack':
+        newDockNodeToolbarButton?.setAttribute('disabled', '');
+        newStackNodeToolbarButton?.setAttribute('disabled', '');
+        newLeafNodeToolbarButton?.setAttribute('disabled', '');
+        break;
+      default:
+        break;
+    }
+  }
+
+  // Layout available and selection
+  if (editorState.layout && hasSelection) {
+    switch (selectedNode?.type) {
+      case 'leaf':
+        // New node buttons displayed
+        newDockNodeToolbarButton?.classList.remove('hidden');
+        newStackNodeToolbarButton?.classList.remove('hidden');
+        newLeafNodeToolbarButton?.classList.remove('hidden');
+
+        // New node buttons enabled (except leaf)
+        newDockNodeToolbarButton?.removeAttribute('disabled');
+        newStackNodeToolbarButton?.removeAttribute('disabled');
+        newLeafNodeToolbarButton?.setAttribute('disabled', '');
+
+        // New node menus hidden
+        newDockNodeToolbarMenu?.classList.add('hidden');
+        newStackNodeToolbarMenu?.classList.add('hidden');
+        newLeafNodeToolbarMenu?.classList.add('hidden');
+        break;
+      case 'dock':
+        // New node buttons hidden
+        newDockNodeToolbarButton?.classList.add('hidden');
+        newStackNodeToolbarButton?.classList.add('hidden');
+        newLeafNodeToolbarButton?.classList.add('hidden');
+
+        // New node menus displayed
+        newDockNodeToolbarMenu?.classList.remove('hidden');
+        newStackNodeToolbarMenu?.classList.remove('hidden');
+        newLeafNodeToolbarMenu?.classList.remove('hidden');
+        break;
+      case 'stack':
+        // New node buttons hidden
+        newDockNodeToolbarButton?.classList.remove('hidden');
+        newStackNodeToolbarButton?.classList.remove('hidden');
+        newLeafNodeToolbarButton?.classList.remove('hidden');
+
+        // New node menus displayed
+        newDockNodeToolbarMenu?.classList.add('hidden');
+        newStackNodeToolbarMenu?.classList.add('hidden');
+        newLeafNodeToolbarMenu?.classList.add('hidden');
+        break;
+      default:
+        break;
+    }
+  }
+
+  // Move node buttons visible when parent node is stack
+  if (
+    editorState.layout &&
+    hasSelection &&
+    selectedNodeParent &&
+    selectedNodeParent.type === 'stack'
+  ) {
+    moveNodeToolbarSeparator?.classList.remove('hidden');
+    moveNodeFirstButton?.classList.remove('hidden');
+    moveNodeBackwardsButton?.classList.remove('hidden');
+    moveNodeForwardsButton?.classList.remove('hidden');
+    moveNodeLastButton?.classList.remove('hidden');
+  } else {
+    moveNodeToolbarSeparator?.classList.add('hidden');
+    moveNodeFirstButton?.classList.add('hidden');
+    moveNodeBackwardsButton?.classList.add('hidden');
+    moveNodeForwardsButton?.classList.add('hidden');
+    moveNodeLastButton?.classList.add('hidden');
+  }
 }
 
 function updateContextMenuButtons() {
-  // TODO mostly same logic as updateToolbarButtons
-  [
-    newDockNodeContextMenuItem,
-    newStackNodeContextMenuItem,
-    newLeafNodeContextMenuItem,
-    deleteNodeContextMenuItem,
-  ].forEach(item => {
-    // if (item) {
-    //   if (hasSelection) {
-    //     item.removeAttribute('disabled');
-    //   } else {
-    //     item.setAttribute('disabled', '');
-    //   }
-    // }
-  });
+  const hasContext = !!editorState.contextNodeId;
+  const contextNode = hasContext
+    ? findNodeById(editorState.contextNodeId)
+    : null;
+  const contextNodeParent = hasContext
+    ? findParentNodeById(editorState.contextNodeId)
+    : null;
+
+  // Check if a layout is available
+  if (editorState.layout) {
+    // All items enabled
+    newDockNodeContextMenuItem?.removeAttribute('disabled');
+    newStackNodeContextMenuItem?.removeAttribute('disabled');
+    newLeafNodeContextMenuItem?.removeAttribute('disabled');
+    newDockNodeContextMenuMenu?.removeAttribute('disabled');
+    newStackNodeContextMenuMenu?.removeAttribute('disabled');
+    newLeafNodeContextMenuMenu?.removeAttribute('disabled');
+    moveNodeFirstContextMenuItem?.removeAttribute('disabled');
+    moveNodeBackwardsContextMenuItem?.removeAttribute('disabled');
+    moveNodeForwardsContextMenuItem?.removeAttribute('disabled');
+    moveNodeLastContextMenuItem?.removeAttribute('disabled');
+  } else {
+    // No layout available
+    // All items disabled
+    newDockNodeContextMenuItem?.setAttribute('disabled', '');
+    newStackNodeContextMenuItem?.setAttribute('disabled', '');
+    newLeafNodeContextMenuItem?.setAttribute('disabled', '');
+    newDockNodeContextMenuMenu?.setAttribute('disabled', '');
+    newStackNodeContextMenuMenu?.setAttribute('disabled', '');
+    newLeafNodeContextMenuMenu?.setAttribute('disabled', '');
+    moveNodeFirstContextMenuItem?.setAttribute('disabled', '');
+    moveNodeBackwardsContextMenuItem?.setAttribute('disabled', '');
+    moveNodeForwardsContextMenuItem?.setAttribute('disabled', '');
+    moveNodeLastContextMenuItem?.setAttribute('disabled', '');
+
+    // New node items displayed
+    newDockNodeContextMenuItem?.classList.remove('hidden');
+    newStackNodeContextMenuItem?.classList.remove('hidden');
+    newLeafNodeContextMenuItem?.classList.remove('hidden');
+
+    // New node menus hidden
+    newDockNodeContextMenuMenu?.classList.add('hidden');
+    newStackNodeContextMenuMenu?.classList.add('hidden');
+    newLeafNodeContextMenuMenu?.classList.add('hidden');
+  }
+
+  // Layout available and no contextual item clicked
+  if (editorState.layout && !hasContext) {
+    // New node items displayed
+    newDockNodeContextMenuItem?.classList.remove('hidden');
+    newStackNodeContextMenuItem?.classList.remove('hidden');
+    newLeafNodeContextMenuItem?.classList.remove('hidden');
+
+    // New node menus hidden
+    newDockNodeContextMenuMenu?.classList.add('hidden');
+    newStackNodeContextMenuMenu?.classList.add('hidden');
+    newLeafNodeContextMenuMenu?.classList.add('hidden');
+
+    // New node items disabled
+    newDockNodeContextMenuItem?.setAttribute('disabled', '');
+    newStackNodeContextMenuItem?.setAttribute('disabled', '');
+    newLeafNodeContextMenuItem?.setAttribute('disabled', '');
+  }
+
+  // Layout available and contextual item clicked
+  if (editorState.layout && hasContext) {
+    switch (contextNode?.type) {
+      case 'leaf':
+        // New node items displayed
+        newDockNodeContextMenuItem?.classList.remove('hidden');
+        newStackNodeContextMenuItem?.classList.remove('hidden');
+        newLeafNodeContextMenuItem?.classList.remove('hidden');
+
+        // New node items enabled (except leaf)
+        newDockNodeContextMenuItem?.removeAttribute('disabled');
+        newStackNodeContextMenuItem?.removeAttribute('disabled');
+        newLeafNodeContextMenuItem?.setAttribute('disabled', '');
+
+        // New node menus hidden
+        newDockNodeContextMenuMenu?.classList.add('hidden');
+        newStackNodeContextMenuMenu?.classList.add('hidden');
+        newLeafNodeContextMenuMenu?.classList.add('hidden');
+        break;
+      case 'dock':
+        // New node items hidden
+        newDockNodeContextMenuItem?.classList.add('hidden');
+        newStackNodeContextMenuItem?.classList.add('hidden');
+        newLeafNodeContextMenuItem?.classList.add('hidden');
+
+        // New node menus displayed
+        newDockNodeContextMenuMenu?.classList.remove('hidden');
+        newStackNodeContextMenuMenu?.classList.remove('hidden');
+        newLeafNodeContextMenuMenu?.classList.remove('hidden');
+        break;
+      case 'stack':
+        // New node items displayed
+        newDockNodeContextMenuItem?.classList.remove('hidden');
+        newStackNodeContextMenuItem?.classList.remove('hidden');
+        newLeafNodeContextMenuItem?.classList.remove('hidden');
+
+        // New node menus hidden
+        newDockNodeContextMenuMenu?.classList.add('hidden');
+        newStackNodeContextMenuMenu?.classList.add('hidden');
+        newLeafNodeContextMenuMenu?.classList.add('hidden');
+        break;
+      default:
+        break;
+    }
+  }
+
+  // Move node items visible when parent node is stack
+  if (
+    editorState.layout &&
+    hasContext &&
+    contextNodeParent &&
+    contextNodeParent.type === 'stack'
+  ) {
+    moveNodeContextMenuSeparator?.classList.remove('hidden');
+    moveNodeFirstContextMenuItem?.classList.remove('hidden');
+    moveNodeBackwardsContextMenuItem?.classList.remove('hidden');
+    moveNodeForwardsContextMenuItem?.classList.remove('hidden');
+    moveNodeLastContextMenuItem?.classList.remove('hidden');
+  } else {
+    moveNodeContextMenuSeparator?.classList.add('hidden');
+    moveNodeFirstContextMenuItem?.classList.add('hidden');
+    moveNodeBackwardsContextMenuItem?.classList.add('hidden');
+    moveNodeForwardsContextMenuItem?.classList.add('hidden');
+    moveNodeLastContextMenuItem?.classList.add('hidden');
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -829,6 +1976,10 @@ function drawNode(calculatedNode, nodeId, styles) {
 // Utility functions
 // -----------------------------------------------------------------------------
 
+function generateUniqueId(prefix = 'node') {
+  return `${prefix}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
 function getCanvasStyles() {
   return {
     light: {
@@ -905,6 +2056,28 @@ function getCanvasStyles() {
         markerSize: 8,
       },
     },
+  };
+}
+
+function createDockNode() {
+  return {
+    ...DEFAULT_DOCK_NODE,
+    id: generateUniqueId('dock'),
+  };
+}
+
+function createStackNode() {
+  return {
+    ...DEFAULT_STACK_NODE,
+    id: generateUniqueId('stack'),
+    children: [],
+  };
+}
+
+function createLeafNode() {
+  return {
+    ...DEFAULT_LEAF_NODE,
+    id: generateUniqueId('leaf'),
   };
 }
 
@@ -1105,6 +2278,14 @@ function findNodeById(id) {
   return findNodeInDefinition(editorState.layoutDefinition.root, id);
 }
 
+function findParentNodeById(id) {
+  if (!editorState.layoutDefinition) return null;
+  if (id === editorState.layoutDefinition.root.id) {
+    return null; // Root node has no parent
+  }
+  return findParentNodeInDefinition(editorState.layoutDefinition.root, id);
+}
+
 function findNodeInDefinition(node, targetId) {
   if (node.id === targetId) {
     return node;
@@ -1143,7 +2324,47 @@ function findNodeInDefinition(node, targetId) {
   return null;
 }
 
-function findNodeAtPosition(x, y) {
+function findParentNodeInDefinition(node, targetId) {
+  // Check children based on node type
+  switch (node.type) {
+    case 'dock':
+      const dockPositions = [
+        'topLeft',
+        'topCenter',
+        'topRight',
+        'leftCenter',
+        'center',
+        'rightCenter',
+        'bottomLeft',
+        'bottomCenter',
+        'bottomRight',
+      ];
+      for (const position of dockPositions) {
+        if (node[position]) {
+          if (node[position].id === targetId) {
+            return node; // Found parent
+          }
+          const result = findParentNodeInDefinition(node[position], targetId);
+          if (result) return result;
+        }
+      }
+      break;
+    case 'stack':
+      if (node.children && Array.isArray(node.children)) {
+        for (const child of node.children) {
+          if (child.id === targetId) {
+            return node; // Found parent
+          }
+          const result = findParentNodeInDefinition(child, targetId);
+          if (result) return result;
+        }
+      }
+      break;
+  }
+  return null;
+}
+
+function findNodeIdAtPosition(x, y) {
   if (!editorState.layout) return null;
 
   const nodeIds = editorState.layout.getNodeIds();
@@ -1371,7 +2592,7 @@ function undo() {
   const { history } = editorState;
 
   if (history.currentIndex <= 0) {
-    console.log('Nothing to undo');
+    console.warn('Nothing to undo');
     return false;
   }
 
@@ -1398,7 +2619,7 @@ function redo() {
   const { history } = editorState;
 
   if (history.currentIndex >= history.snapshots.length - 1) {
-    console.log('Nothing to redo');
+    console.warn('Nothing to redo');
     return false;
   }
 
@@ -1444,12 +2665,12 @@ function jumpToHistoryIndex(targetIndex) {
   const { history } = editorState;
 
   if (targetIndex < 0 || targetIndex >= history.snapshots.length) {
-    console.log('Invalid history index:', targetIndex);
+    console.error('Invalid history index:', targetIndex);
     return false;
   }
 
   if (targetIndex === history.currentIndex) {
-    console.log('Already at history index:', targetIndex);
+    console.warn('Already at history index:', targetIndex);
     return false;
   }
 
@@ -1476,13 +2697,387 @@ function jumpToHistoryIndex(targetIndex) {
 // Node manipulation
 // -----------------------------------------------------------------------------
 
-function deleteSelectedNode() {
-  if (!editorState.selectedNodeId || !editorState.layoutDefinition) {
-    console.log('No node selected for deletion');
+function replaceRootNode(nodeType) {
+  if (!editorState.layoutDefinition) {
+    console.warn('No layout loaded');
+    return;
+  }
+  if (!['dock', 'stack', 'leaf'].includes(nodeType)) {
+    console.warn('Invalid node type:', nodeType);
     return;
   }
 
-  const nodeId = editorState.selectedNodeId;
+  console.log('Replacing root node with type:', nodeType);
+
+  try {
+    const snapshot = preActionSnapshot('Replace root node');
+
+    // Create new root node
+    let newRootNode;
+    switch (nodeType) {
+      case 'dock':
+        newRootNode = createDockNode();
+        break;
+      case 'stack':
+        newRootNode = createStackNode();
+        break;
+      case 'leaf':
+        newRootNode = createLeafNode();
+        break;
+    }
+
+    // Replace the root node
+    editorState.layoutDefinition.root = newRootNode;
+
+    // Reload layout with updated definition (preserve history)
+    const updatedDefinition = editorState.layoutDefinition;
+    initialiseLayout(updatedDefinition);
+
+    // Clear selection since the root node has changed
+    editorState.selectedNodeId = null;
+    editorState.dirty = true;
+
+    updateTitle();
+    updatePropertyEditor();
+    updateStatusBar();
+    updateTreeView();
+    updateToolbarButtons();
+
+    postActionSnapshot(snapshot);
+
+    console.log('Root node replaced successfully');
+  } catch (error) {
+    console.error('Error replacing root node:', error);
+  }
+}
+
+function replaceNode(nodeId, nodeType) {
+  if (!editorState.layoutDefinition || !nodeId) {
+    console.warn('No node selected for replacement');
+    return;
+  }
+  if (!['dock', 'stack', 'leaf'].includes(nodeType)) {
+    console.warn('Invalid node type:', nodeType);
+    return;
+  }
+
+  console.log('Replacing node', nodeId, 'with type:', nodeType);
+
+  try {
+    const snapshot = preActionSnapshot('Replace node');
+
+    // Create new node
+    let newNode;
+    switch (nodeType) {
+      case 'dock':
+        newNode = createDockNode();
+        break;
+      case 'stack':
+        newNode = createStackNode();
+        break;
+      case 'leaf':
+        newNode = createLeafNode();
+        break;
+    }
+
+    // Find parent of the target node
+    const parentNode = findParentNodeById(nodeId);
+    if (!parentNode) {
+      console.error('Cannot replace root node with this method');
+      return;
+    }
+
+    // Replace the target node in its parent
+    let replaced = false;
+    switch (parentNode.type) {
+      case 'dock':
+        const dockPositions = [
+          'topLeft',
+          'topCenter',
+          'topRight',
+          'leftCenter',
+          'center',
+          'rightCenter',
+          'bottomLeft',
+          'bottomCenter',
+          'bottomRight',
+        ];
+        for (const position of dockPositions) {
+          if (parentNode[position] && parentNode[position].id === nodeId) {
+            parentNode[position] = newNode;
+            replaced = true;
+            break;
+          }
+        }
+        break;
+      case 'stack':
+        if (parentNode.children && Array.isArray(parentNode.children)) {
+          for (let i = 0; i < parentNode.children.length; i++) {
+            if (parentNode.children[i].id === nodeId) {
+              parentNode.children[i] = newNode;
+              replaced = true;
+              break;
+            }
+          }
+        }
+        break;
+    }
+
+    if (!replaced) {
+      console.error('Failed to replace node:', nodeId);
+      return;
+    }
+
+    // Reload layout with updated definition (preserve history)
+    const updatedDefinition = editorState.layoutDefinition;
+    initialiseLayout(updatedDefinition);
+
+    // Select the newly created node
+    editorState.selectedNodeId = newNode.id;
+    editorState.dirty = true;
+
+    updateTitle();
+    updatePropertyEditor();
+    updateStatusBar();
+    updateTreeView();
+    updateToolbarButtons();
+
+    postActionSnapshot(snapshot);
+
+    console.log('Node replaced successfully:', newNode);
+  } catch (error) {
+    console.error('Error replacing node:', error);
+  }
+}
+
+function createNodeInStack(parentStackNode, nodeType) {
+  if (!editorState.layoutDefinition) {
+    console.warn('No layout loaded');
+    return;
+  }
+  if (!parentStackNode || parentStackNode.type !== 'stack') {
+    console.warn('Invalid parent stack node');
+    return;
+  }
+  if (!['dock', 'stack', 'leaf'].includes(nodeType)) {
+    console.warn('Invalid node type:', nodeType);
+    return;
+  }
+
+  console.log(
+    'Creating node of type',
+    nodeType,
+    'in stack',
+    parentStackNode.id
+  );
+
+  try {
+    const snapshot = preActionSnapshot('Create node in stack');
+
+    // Create new node
+    let newNode;
+    switch (nodeType) {
+      case 'dock':
+        newNode = createDockNode();
+        break;
+      case 'stack':
+        newNode = createStackNode();
+        break;
+      case 'leaf':
+        newNode = createLeafNode();
+        break;
+    }
+
+    // Add new node to the end of the parent's children array
+    parentStackNode.children.push(newNode);
+
+    // Reload layout with updated definition (preserve history)
+    const updatedDefinition = editorState.layoutDefinition;
+    initialiseLayout(updatedDefinition);
+
+    // Select the newly created node
+    editorState.selectedNodeId = newNode.id;
+    editorState.dirty = true;
+
+    updateTitle();
+    updatePropertyEditor();
+    updateStatusBar();
+    updateTreeView();
+    updateToolbarButtons();
+
+    postActionSnapshot(snapshot);
+
+    console.log('Node created successfully in stack:', newNode);
+  } catch (error) {
+    console.error('Error creating node in stack:', error);
+  }
+}
+
+function createNodeInDock(parentDockNode, position, nodeType) {
+  if (!editorState.layoutDefinition) {
+    console.warn('No layout loaded');
+    return;
+  }
+  if (!parentDockNode || parentDockNode.type !== 'dock') {
+    console.warn('Invalid parent dock node');
+    return;
+  }
+  if (!['dock', 'stack', 'leaf'].includes(nodeType)) {
+    console.warn('Invalid node type:', nodeType);
+    return;
+  }
+  const validPositions = [
+    'topLeft',
+    'topCenter',
+    'topRight',
+    'leftCenter',
+    'center',
+    'rightCenter',
+    'bottomLeft',
+    'bottomCenter',
+    'bottomRight',
+  ];
+  if (!validPositions.includes(position)) {
+    console.warn('Invalid dock position:', position);
+    return;
+  }
+
+  console.log(
+    'Creating node of type',
+    nodeType,
+    'in dock',
+    parentDockNode.id,
+    'at position',
+    position
+  );
+
+  try {
+    const snapshot = preActionSnapshot('Create node in dock');
+
+    // Create new node
+    let newNode;
+    switch (nodeType) {
+      case 'dock':
+        newNode = createDockNode();
+        break;
+      case 'stack':
+        newNode = createStackNode();
+        break;
+      case 'leaf':
+        newNode = createLeafNode();
+        break;
+    }
+
+    // Add new node to the specified position
+    parentDockNode[position] = newNode;
+
+    // Reload layout with updated definition (preserve history)
+    const updatedDefinition = editorState.layoutDefinition;
+    initialiseLayout(updatedDefinition);
+
+    // Select the newly created node
+    editorState.selectedNodeId = newNode.id;
+    editorState.dirty = true;
+
+    updateTitle();
+    updatePropertyEditor();
+    updateStatusBar();
+    updateTreeView();
+    updateToolbarButtons();
+
+    postActionSnapshot(snapshot);
+
+    console.log('Node created successfully in dock:', newNode);
+  } catch (error) {
+    console.error('Error creating node in dock:', error);
+  }
+}
+
+function moveNodeInStack(parentStackNode, nodeId, movement) {
+  // movement = 'first' | 'backwards' | 'forwards' | 'last'
+
+  if (!editorState.layoutDefinition) {
+    console.warn('No layout loaded');
+    return;
+  }
+  if (!parentStackNode || parentStackNode.type !== 'stack') {
+    console.warn('Invalid parent stack node');
+    return;
+  }
+  if (!nodeId) {
+    console.warn('No node selected for movement');
+    return;
+  }
+  if (!['first', 'backwards', 'forwards', 'last'].includes(movement)) {
+    console.warn('Invalid movement type:', movement);
+    return;
+  }
+
+  console.log(
+    `Moving node ${nodeId} ${movement} in stack ${parentStackNode.id}`
+  );
+
+  try {
+    const snapshot = preActionSnapshot('Move node in stack');
+
+    const index = parentStackNode.children.findIndex(n => n.id === nodeId);
+    if (index === -1) {
+      console.error('Node not found in parent stack:', nodeId);
+      return;
+    }
+
+    let newIndex = index;
+    switch (movement) {
+      case 'first':
+        newIndex = 0;
+        break;
+      case 'backwards':
+        newIndex = Math.max(0, index - 1);
+        break;
+      case 'forwards':
+        newIndex = Math.min(parentStackNode.children.length - 1, index + 1);
+        break;
+      case 'last':
+        newIndex = parentStackNode.children.length - 1;
+        break;
+    }
+
+    if (newIndex !== index) {
+      const [movedNode] = parentStackNode.children.splice(index, 1);
+      parentStackNode.children.splice(newIndex, 0, movedNode);
+      editorState.dirty = true;
+    } else {
+      console.warn('Node is already in the desired position');
+    }
+
+    // Reload layout with updated definition (preserve history)
+    const updatedDefinition = editorState.layoutDefinition;
+    initialiseLayout(updatedDefinition);
+
+    // Keep the node selected
+    editorState.selectedNodeId = parentStackNode.children[newIndex].id;
+    editorState.dirty = true;
+
+    updateTitle();
+    updatePropertyEditor();
+    updateStatusBar();
+    updateTreeView();
+    updateToolbarButtons();
+
+    postActionSnapshot(snapshot);
+
+    console.log('Node moved successfully in stack');
+  } catch (error) {
+    console.error('Error moving node in stack:', error);
+  }
+}
+
+function deleteNode(nodeId) {
+  if (!editorState.layoutDefinition || !nodeId) {
+    console.warn('No node selected for deletion');
+    return;
+  }
+
   console.log('Deleting node:', nodeId);
 
   try {
@@ -1572,10 +3167,6 @@ function deleteNodeFromDefinition(node, targetId) {
             // Found the target node, remove it from the array
             node.children.splice(i, 1);
 
-            // If stack becomes empty, we need to handle this case
-            if (node.children.length === 0) {
-              console.warn('Stack node became empty after deletion');
-            }
             return true;
           } else {
             // Recursively search in child

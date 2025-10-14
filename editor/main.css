@@ -82,12 +82,14 @@ footer {
 
 /* Toolbar and context menu buttons */
 e2-toolbar-separator,
-e2-toolbar-button {
+e2-toolbar-button,
+e2-toolbar-menu {
   display: flex;
 }
 
 e2-toolbar-separator.hidden,
-e2-toolbar-button.hidden {
+e2-toolbar-button.hidden,
+e2-toolbar-menu.hidden {
   display: none;
 }
 
