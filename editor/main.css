@@ -85,6 +85,11 @@ footer {
   grid-area: footer;
 }
 
+#settings-editor {
+  width: 60vw;
+  height: 60vh;
+}
+
 /* Toolbar and context menu buttons */
 e2-toolbar-separator,
 e2-toolbar-button,

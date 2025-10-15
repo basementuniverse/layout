@@ -1,39 +1,15 @@
 // Layout Editor
 
 // TODO
-// - handle value change in properties editor
-// - move grid button into settings dialog
-// - rest of settings... use KeyValueEditor
 // - insert colours and other values from settings into getCanvasStyles
+// - local storage for settings and last opened layout
+// - layout JSON preview (and editor?)
 
 // -----------------------------------------------------------------------------
 // Globals and editor state
 // -----------------------------------------------------------------------------
 
 const TITLE = 'Layout';
-
-const LAYOUT = {
-  root: {},
-};
-
-const DOCK_NODE = {
-  id: '',
-  type: 'dock',
-};
-
-const STACK_NODE = {
-  id: '',
-  type: 'stack',
-  direction: 'vertical',
-  align: 'start',
-  gap: '0px',
-  children: [],
-};
-
-const LEAF_NODE = {
-  id: '',
-  type: 'leaf',
-};
 
 const editorState = {
   dirty: false,
@@ -56,6 +32,48 @@ const editorState = {
     showGuide: true,
     guideSize: { x: 1080, y: 1920 },
   },
+};
+
+const SETTINGS_SCHEMA = {
+  type: 'object',
+  properties: {
+    editorMargin: { type: 'number', minimum: 0, maximum: 100 },
+    showGrid: { type: 'boolean' },
+    gridSize: { type: 'number', minimum: 5, maximum: 100 },
+    showGuide: { type: 'boolean' },
+    guideSize: {
+      type: 'object',
+      properties: {
+        x: { type: 'number', minimum: 100, maximum: 10000 },
+        y: { type: 'number', minimum: 100, maximum: 10000 },
+      },
+      required: ['x', 'y'],
+    },
+  },
+  required: ['editorMargin', 'showGrid', 'gridSize', 'showGuide', 'guideSize'],
+};
+
+const LAYOUT = {
+  root: {},
+};
+
+const DOCK_NODE = {
+  id: '',
+  type: 'dock',
+};
+
+const STACK_NODE = {
+  id: '',
+  type: 'stack',
+  direction: 'vertical',
+  align: 'start',
+  gap: '0px',
+  children: [],
+};
+
+const LEAF_NODE = {
+  id: '',
+  type: 'leaf',
 };
 
 // Layout library
@@ -92,12 +110,11 @@ let newToolbarButton,
   moveNodeForwardsButton,
   moveNodeLastButton,
   deleteNodeToolbarButton,
-  gridToolbarButton,
   settingsToolbarButton,
   themeSwitch;
 
 // Data views
-let treeView, propertiesTitle, propertyEditor, historyView;
+let treeView, propertiesTitle, propertyEditor, historyView, settingsEditor;
 
 // Status bar
 let statusBar, mouseStatusBarItem, selectedStatusBarItem;
@@ -124,10 +141,10 @@ let namePrompt, settingsDialog, closeSettingsDialogButton;
 // -----------------------------------------------------------------------------
 
 document.addEventListener('DOMContentLoaded', () => {
-  initializeEditor();
+  initialiseEditor();
 });
 
-function initializeEditor() {
+function initialiseEditor() {
   console.log('Initializing Layout Editor...');
 
   // Check if Layout library is available
@@ -202,7 +219,6 @@ function initializeEditor() {
   deleteNodeToolbarButton = document.getElementById(
     'delete-node-toolbar-button'
   );
-  gridToolbarButton = document.getElementById('grid-toolbar-button');
   settingsToolbarButton = document.getElementById('settings-toolbar-button');
   themeSwitch = document.querySelector('.theme-switch input');
   statusBar = document.getElementById('status-bar');
@@ -210,6 +226,7 @@ function initializeEditor() {
   selectedStatusBarItem = document.getElementById('selected-status');
   namePrompt = document.getElementById('name-prompt');
   settingsDialog = document.getElementById('settings-dialog');
+  settingsEditor = document.getElementById('settings-editor');
   closeSettingsDialogButton = document.getElementById(
     'close-settings-dialog-button'
   );
@@ -260,41 +277,26 @@ function initializeEditor() {
     ];
   }
 
+  // Initialise settings editor
+  settingsEditor.value = Object.fromEntries(
+    Object.entries(editorState.settings).filter(([key]) => key !== 'theme')
+  );
+  settingsEditor.schema = SETTINGS_SCHEMA;
+
   setupCanvas();
   startRenderLoop();
   setupEventListeners();
   updateTitle();
   updateStatusBar();
   updateToolbarButtons();
-  gridToolbarButton.toggleAttribute('active', editorState.settings.showGrid);
   themeSwitch.checked = editorState.settings.theme === 'dark';
   app.setAttribute('theme', editorState.settings.theme);
+  settingsDialog.setAttribute('theme', editorState.settings.theme);
 
-  console.log('Layout Editor initialized successfully');
+  console.log('Layout Editor initialised successfully');
 }
 
 function setupCanvas() {
-  // Resize handler
-  function resizeCanvas() {
-    const rect = content.getBoundingClientRect();
-    canvas.width =
-      Math.floor(rect.width) - editorState.settings.editorMargin * 2;
-    canvas.height =
-      Math.floor(rect.height) - editorState.settings.editorMargin * 2;
-    canvas.style.width = `${canvas.width}px`;
-    canvas.style.height = `${canvas.height}px`;
-    canvas.style.top = `${editorState.settings.editorMargin}px`;
-    canvas.style.left = `${editorState.settings.editorMargin}px`;
-    editorState.canvasSize.x = canvas.width;
-    editorState.canvasSize.y = canvas.height;
-
-    // Update layout if it exists
-    if (editorState.layout) {
-      editorState.layout.update(editorState.canvasSize);
-    }
-  }
-
-  // Handle window resize and do initial resize
   window.addEventListener('resize', resizeCanvas);
   resizeCanvas();
 
@@ -308,6 +310,24 @@ function setupCanvas() {
   }
 }
 
+function resizeCanvas() {
+  const rect = content.getBoundingClientRect();
+  canvas.width = Math.floor(rect.width) - editorState.settings.editorMargin * 2;
+  canvas.height =
+    Math.floor(rect.height) - editorState.settings.editorMargin * 2;
+  canvas.style.width = `${canvas.width}px`;
+  canvas.style.height = `${canvas.height}px`;
+  canvas.style.top = `${editorState.settings.editorMargin}px`;
+  canvas.style.left = `${editorState.settings.editorMargin}px`;
+  editorState.canvasSize.x = canvas.width;
+  editorState.canvasSize.y = canvas.height;
+
+  // Update layout if it exists
+  if (editorState.layout) {
+    editorState.layout.update(editorState.canvasSize);
+  }
+}
+
 function setupEventListeners() {
   // Theme switch toggle
   themeSwitch.addEventListener('change', e => {
@@ -317,6 +337,7 @@ function setupEventListeners() {
       editorState.settings.theme = 'light';
     }
     app.setAttribute('theme', editorState.settings.theme);
+    settingsDialog.setAttribute('theme', editorState.settings.theme);
   });
 
   // Mouse movement tracking
@@ -562,11 +583,21 @@ function setupEventListeners() {
   });
 
   // Properties editor changes
-  propertyEditor.addEventListener('keyvalue-change', event => {
-    if (event.detail.isValid) {
-      console.log('everything valid, would update layout');
-    }
-  });
+  const debouncedHandleNodePropertiesChange = debounce(
+    handleNodePropertyChange,
+    300
+  );
+  propertyEditor.addEventListener(
+    'keyvalue-change',
+    debouncedHandleNodePropertiesChange
+  );
+
+  // Settings editor changes
+  const debouncedHandleSettingsChange = debounce(handleSettingsChange, 300);
+  settingsEditor.addEventListener(
+    'keyvalue-change',
+    debouncedHandleSettingsChange
+  );
 
   // Close settings dialog
   closeSettingsDialogButton?.addEventListener('click', e => {
@@ -725,14 +756,6 @@ async function handleToolbarAction(action) {
       if (!hasLayout) break;
       if (!hasSelection) break;
       deleteNode(editorState.selectedNodeId);
-      break;
-    case 'toggle-grid':
-      // TODO move this to settings dialog
-      editorState.settings.showGrid = !editorState.settings.showGrid;
-      gridToolbarButton.toggleAttribute(
-        'active',
-        editorState.settings.showGrid
-      );
       break;
     case 'settings':
       settingsDialog?.showModal();
@@ -1445,6 +1468,34 @@ function handleHistorySelection(event) {
   }
 }
 
+function handleNodePropertyChange(event) {
+  console.log('Node property changed:', event.detail);
+
+  if (!propertyEditor.nodeId) return;
+
+  propertyEditor.validate();
+  if (propertyEditor.isValid()) {
+    updateNode(
+      propertyEditor.nodeId,
+      propertyEditor.value,
+      event.detail.path.join('.')
+    );
+  }
+}
+
+function handleSettingsChange(event) {
+  console.log('Settings changed:', event.detail);
+
+  settingsEditor.validate();
+  if (settingsEditor.isValid()) {
+    editorState.settings = {
+      ...editorState.settings,
+      ...settingsEditor.value,
+    };
+    resizeCanvas();
+  }
+}
+
 // -----------------------------------------------------------------------------
 // UI
 // -----------------------------------------------------------------------------
@@ -1506,6 +1557,7 @@ function updatePropertyEditor() {
     // Clear property editor
     propertyEditor.value = {};
     propertyEditor.schema = undefined;
+    propertyEditor.nodeId = null;
     propertiesTitle.innerText = 'Node Properties';
     return;
   }
@@ -1535,15 +1587,16 @@ function updatePropertyEditor() {
         case 'stack':
           properties = {
             ...getBaseNodePropertiesWithDefaults(DEFAULT_STACK_NODE, nodeData),
-            direction: DEFAULT_STACK_NODE.direction || nodeData.direction,
-            align: DEFAULT_STACK_NODE.align || nodeData.align,
-            gap: DEFAULT_STACK_NODE.gap || nodeData.gap,
+            direction: nodeData.direction ?? DEFAULT_STACK_NODE.direction,
+            align: nodeData.align ?? DEFAULT_STACK_NODE.align,
+            gap: nodeData.gap ?? DEFAULT_STACK_NODE.gap,
           };
           schema = STACK_NODE_SCHEMA;
           break;
       }
       propertyEditor.value = properties;
       propertyEditor.schema = schema;
+      propertyEditor.nodeId = nodeData.id;
       propertiesTitle.innerText = `${formatNodeTypeForPropertiesView(
         nodeData.type
       )} Properties`;
@@ -2179,6 +2232,30 @@ function initialiseLayout(layoutDefinition) {
   return true;
 }
 
+function updateLayout(layoutDefinition) {
+  try {
+    console.log('Updating layout:', layoutDefinition);
+    editorState.layoutDefinition = layoutDefinition;
+
+    // Create layout instance
+    editorState.layout = new Layout(layoutDefinition);
+    console.log('Layout instance created:', editorState.layout);
+
+    // Update layout with current canvas size
+    if (editorState.canvasSize.x > 0 && editorState.canvasSize.y > 0) {
+      editorState.layout.update(editorState.canvasSize);
+    }
+
+    console.log('Layout updated successfully');
+    console.log('Available nodes:', editorState.layout.getNodeIds());
+  } catch (error) {
+    console.error('Error updating layout:', error);
+    return false;
+  }
+
+  return true;
+}
+
 async function saveLayout() {
   if (!editorState.layoutDefinition) return;
 
@@ -2463,6 +2540,16 @@ function getBaseNodePropertiesWithDefaults(defaultNode, nodeData) {
   };
 }
 
+function debounce(fn, wait) {
+  let timeoutId = null;
+  return (...args) => {
+    window.clearTimeout(timeoutId);
+    timeoutId = window.setTimeout(() => {
+      fn(...args);
+    }, wait);
+  };
+}
+
 // -----------------------------------------------------------------------------
 // Undo/Redo
 // -----------------------------------------------------------------------------
@@ -2639,11 +2726,14 @@ function replaceRootNode(nodeType) {
     }
 
     // Replace the root node
-    editorState.layoutDefinition.root = newRootNode;
+    editorState.layoutDefinition.root = {
+      ...newRootNode,
+      id: editorState.layoutDefinition.root.id, // Preserve original ID
+    };
 
     // Reload layout with updated definition (preserve history)
     const updatedDefinition = editorState.layoutDefinition;
-    initialiseLayout(updatedDefinition);
+    updateLayout(updatedDefinition);
 
     // Clear selection since the root node has changed
     editorState.selectedNodeId = null;
@@ -2716,7 +2806,10 @@ function replaceNode(nodeId, nodeType) {
         ];
         for (const position of dockPositions) {
           if (parentNode[position] && parentNode[position].id === nodeId) {
-            parentNode[position] = newNode;
+            parentNode[position] = {
+              ...newNode,
+              id: nodeId, // Preserve original ID
+            };
             replaced = true;
             break;
           }
@@ -2726,7 +2819,10 @@ function replaceNode(nodeId, nodeType) {
         if (parentNode.children && Array.isArray(parentNode.children)) {
           for (let i = 0; i < parentNode.children.length; i++) {
             if (parentNode.children[i].id === nodeId) {
-              parentNode.children[i] = newNode;
+              parentNode.children[i] = {
+                ...newNode,
+                id: nodeId, // Preserve original ID
+              };
               replaced = true;
               break;
             }
@@ -2742,7 +2838,7 @@ function replaceNode(nodeId, nodeType) {
 
     // Reload layout with updated definition (preserve history)
     const updatedDefinition = editorState.layoutDefinition;
-    initialiseLayout(updatedDefinition);
+    updateLayout(updatedDefinition);
 
     // Select the newly created node
     editorState.selectedNodeId = newNode.id;
@@ -2805,7 +2901,7 @@ function createNodeInStack(parentStackNode, nodeType) {
 
     // Reload layout with updated definition (preserve history)
     const updatedDefinition = editorState.layoutDefinition;
-    initialiseLayout(updatedDefinition);
+    updateLayout(updatedDefinition);
 
     // Select the newly created node
     editorState.selectedNodeId = newNode.id;
@@ -2885,7 +2981,7 @@ function createNodeInDock(parentDockNode, position, nodeType) {
 
     // Reload layout with updated definition (preserve history)
     const updatedDefinition = editorState.layoutDefinition;
-    initialiseLayout(updatedDefinition);
+    updateLayout(updatedDefinition);
 
     // Select the newly created node
     editorState.selectedNodeId = newNode.id;
@@ -2964,7 +3060,7 @@ function moveNodeInStack(parentStackNode, nodeId, movement) {
 
     // Reload layout with updated definition (preserve history)
     const updatedDefinition = editorState.layoutDefinition;
-    initialiseLayout(updatedDefinition);
+    updateLayout(updatedDefinition);
 
     // Keep the node selected
     editorState.selectedNodeId = parentStackNode.children[newIndex].id;
@@ -2981,6 +3077,52 @@ function moveNodeInStack(parentStackNode, nodeId, movement) {
     console.log('Node moved successfully in stack');
   } catch (error) {
     console.error('Error moving node in stack:', error);
+  }
+}
+
+function updateNode(nodeId, nodeData, propertyName = '') {
+  if (!editorState.layoutDefinition || !nodeId) {
+    console.warn('No node selected for update');
+    return;
+  }
+
+  console.log('Updating node:', nodeId, nodeData);
+
+  try {
+    const snapshot = preActionSnapshot(`Update ${nodeId} ${propertyName}`);
+
+    // Find the target node
+    const targetNode = findNodeInDefinition(
+      editorState.layoutDefinition.root,
+      nodeId
+    );
+    if (!targetNode) {
+      console.error('Node not found for update:', nodeId);
+      return;
+    }
+
+    // Update the node's properties
+    Object.assign(targetNode, nodeData);
+
+    // Reload layout with updated definition (preserve history)
+    const updatedDefinition = editorState.layoutDefinition;
+    updateLayout(updatedDefinition);
+
+    // Keep the node selected
+    editorState.selectedNodeId = targetNode.id;
+    editorState.dirty = true;
+
+    updateTitle();
+    updatePropertyEditor();
+    updateStatusBar();
+    updateTreeView();
+    updateToolbarButtons();
+
+    postActionSnapshot(snapshot);
+
+    console.log('Node updated successfully');
+  } catch (error) {
+    console.error('Error updating node:', error);
   }
 }
 
@@ -3016,7 +3158,7 @@ function deleteNode(nodeId) {
 
     // Reload layout with updated definition (preserve history)
     const updatedDefinition = editorState.layoutDefinition;
-    initialiseLayout(updatedDefinition);
+    updateLayout(updatedDefinition);
 
     // Clear selection since the node is gone
     editorState.selectedNodeId = null;
