@@ -1,10 +1,5 @@
 // Layout Editor
 
-// TODO
-// - insert colours and other values from settings into getCanvasStyles
-// - local storage for settings and last opened layout
-// - layout JSON preview (and editor?)
-
 // -----------------------------------------------------------------------------
 // Globals and editor state
 // -----------------------------------------------------------------------------
@@ -28,9 +23,94 @@ const editorState = {
     theme: 'dark',
     editorMargin: 20,
     showGrid: true,
+    nodeColour: '#0078d4',
     gridSize: 10,
     showGuide: true,
-    guideSize: { x: 1080, y: 1920 },
+    guideColour: '#ff5588',
+    guideSize: { x: 600, y: 800 },
+  },
+};
+
+const CANVAS_STYLES = {
+  light: {
+    background: '#ffffff',
+    foreground: '#000000',
+    grid: {
+      strokeColor: '#00000033',
+      strokeWidth: 1,
+      lineStyle: 'dotted',
+    },
+    node: {
+      fill: false,
+      stroke: true,
+      strokeColor: '#00000077',
+      strokeWidth: 2,
+      lineStyle: 'solid',
+      rounded: true,
+      borderRadius: 6,
+    },
+    selectedNode: {
+      fill: true,
+      fillColor: '#0078d422',
+      stroke: true,
+      strokeColor: '#0078d4cc',
+      strokeWidth: 2,
+      lineStyle: 'solid',
+      rounded: true,
+      borderRadius: 6,
+    },
+    selectedNodeLabel: {
+      foregroundColour: '#222222',
+      backgroundColour: '#22222222',
+    },
+    selectedNodeCenterMarker: {
+      markerColour: '#0078d4',
+      markerStyle: '+',
+      markerSize: 8,
+    },
+  },
+  dark: {
+    background: '#000000',
+    foreground: '#ffffff',
+    grid: {
+      strokeColor: '#ffffff33',
+      strokeWidth: 1,
+      lineStyle: 'dotted',
+    },
+    node: {
+      fill: false,
+      stroke: true,
+      strokeColor: '#ffffff77',
+      strokeWidth: 2,
+      lineStyle: 'solid',
+      rounded: true,
+      borderRadius: 6,
+    },
+    selectedNode: {
+      fill: true,
+      fillColor: '#0078d422',
+      stroke: true,
+      strokeColor: '#0078d4cc',
+      strokeWidth: 2,
+      lineStyle: 'solid',
+      rounded: true,
+      borderRadius: 6,
+    },
+    selectedNodeLabel: {
+      foregroundColour: '#ffffff',
+      backgroundColour: '#ffffff22',
+    },
+    selectedNodeCenterMarker: {
+      markerColour: '#0078d4',
+      markerStyle: '+',
+      markerSize: 8,
+    },
+  },
+  guide: {
+    fill: false,
+    stroke: true,
+    lineStyle: 'dashed',
+    strokeWidth: 2,
   },
 };
 
@@ -40,6 +120,7 @@ const SETTINGS_SCHEMA = {
     editorMargin: { type: 'number', minimum: 0, maximum: 100 },
     showGrid: { type: 'boolean' },
     gridSize: { type: 'number', minimum: 5, maximum: 100 },
+    colour: { type: 'string', format: 'color' },
     showGuide: { type: 'boolean' },
     guideSize: {
       type: 'object',
@@ -1976,6 +2057,9 @@ function drawCanvas() {
   // Render the layout
   drawLayoutNodes(styles);
 
+  // Draw guide
+  drawGuide(styles);
+
   // Update debug display
   Debug.draw(context);
 }
@@ -2026,6 +2110,28 @@ function drawNode(calculatedNode, nodeId, styles) {
   }
 }
 
+function drawGuide(styles) {
+  if (editorState.settings.showGuide) {
+    const guideColour = Color.ColorUtils.rgbaToString(
+      Color.ColorUtils.fadeOut(
+        Color.ColorUtils.stringToRGBA(editorState.settings.guideColour),
+        0.5
+      )
+    );
+    const size = editorState.settings.guideSize;
+    const halfSize = { x: size.x / 2, y: size.y / 2 };
+    const center = { x: canvas.width / 2, y: canvas.height / 2 };
+    drawRectangle(
+      { x: center.x - halfSize.x, y: center.y - halfSize.y },
+      size,
+      {
+        ...styles.guide,
+        strokeColor: guideColour,
+      }
+    );
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Utility functions
 // -----------------------------------------------------------------------------
@@ -2035,82 +2141,21 @@ function generateUniqueId(prefix = 'node') {
 }
 
 function getCanvasStyles() {
-  return {
-    light: {
-      background: '#ffffff',
-      foreground: '#000000',
-      grid: {
-        strokeColor: '#00000033',
-        strokeWidth: 1,
-        lineStyle: 'dotted',
-      },
-      node: {
-        fill: false,
-        stroke: true,
-        strokeColor: '#00000077',
-        strokeWidth: 2,
-        lineStyle: 'solid',
-        rounded: true,
-        borderRadius: 6,
-      },
-      selectedNode: {
-        fill: true,
-        fillColor: '#0078d422',
-        stroke: true,
-        strokeColor: '#0078d4cc',
-        strokeWidth: 2,
-        lineStyle: 'solid',
-        rounded: true,
-        borderRadius: 6,
-      },
-      selectedNodeLabel: {
-        foregroundColour: '#222222',
-        backgroundColour: '#22222222',
-      },
-      selectedNodeCenterMarker: {
-        markerColour: '#0078d4',
-        markerStyle: '+',
-        markerSize: 8,
-      },
-    },
-    dark: {
-      background: '#000000',
-      foreground: '#ffffff',
-      grid: {
-        strokeColor: '#ffffff33',
-        strokeWidth: 1,
-        lineStyle: 'dotted',
-      },
-      node: {
-        fill: false,
-        stroke: true,
-        strokeColor: '#ffffff77',
-        strokeWidth: 2,
-        lineStyle: 'solid',
-        rounded: true,
-        borderRadius: 6,
-      },
-      selectedNode: {
-        fill: true,
-        fillColor: '#0078d422',
-        stroke: true,
-        strokeColor: '#0078d4cc',
-        strokeWidth: 2,
-        lineStyle: 'solid',
-        rounded: true,
-        borderRadius: 6,
-      },
-      selectedNodeLabel: {
-        foregroundColour: '#ffffff',
-        backgroundColour: '#ffffff22',
-      },
-      selectedNodeCenterMarker: {
-        markerColour: '#0078d4',
-        markerStyle: '+',
-        markerSize: 8,
-      },
-    },
-  };
+  const colour = Color.ColorUtils.stringToRGBA(editorState.settings.nodeColour);
+  const styles = CANVAS_STYLES;
+  styles.light.selectedNode.fillColor = Color.ColorUtils.rgbaToString(
+    Color.ColorUtils.fadeOut(colour, 0.9)
+  );
+  styles.light.selectedNode.strokeColor = Color.ColorUtils.rgbaToString(colour);
+  styles.light.selectedNodeCenterMarker.markerColour =
+    Color.ColorUtils.rgbaToString(colour);
+  styles.dark.selectedNode.fillColor = Color.ColorUtils.rgbaToString(
+    Color.ColorUtils.fadeOut(colour, 0.9)
+  );
+  styles.dark.selectedNode.strokeColor = Color.ColorUtils.rgbaToString(colour);
+  styles.dark.selectedNodeCenterMarker.markerColour =
+    Color.ColorUtils.rgbaToString(colour);
+  return styles;
 }
 
 function createDockNode() {
