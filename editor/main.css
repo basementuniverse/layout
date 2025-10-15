@@ -63,6 +63,11 @@ aside.properties {
   grid-area: properties;
 }
 
+aside.properties .properties-container {
+  max-height: calc(100vh - 110px);
+  overflow-y: auto;
+}
+
 aside.history {
   grid-area: history;
 }
@@ -150,4 +155,50 @@ e2-context-menu-separator.hidden {
   content: attr(data-on);
   transform: translateX(24px);
   background-color: rgb(45, 45, 45);
+}
+
+/* Scrollbars */
+*::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+e2-app[theme="light"] *::-webkit-scrollbar-track {
+  border-radius: 0px;
+  background-color: #ffffff;
+}
+
+e2-app[theme="light"] *::-webkit-scrollbar-track:hover,
+e2-app[theme="light"] *::-webkit-scrollbar-track:active {
+  background-color: #ffffff;
+}
+
+e2-app[theme="light"] *::-webkit-scrollbar-thumb {
+  border-radius: 0px;
+  background-color: #8E8E8E;
+}
+
+e2-app[theme="light"] *::-webkit-scrollbar-thumb:hover,
+e2-app[theme="light"] *::-webkit-scrollbar-thumb:active {
+  background-color: #BEBEBE;
+}
+
+e2-app[theme="dark"] *::-webkit-scrollbar-track {
+  border-radius: 0px;
+  background-color: #1E1E1E;
+}
+
+e2-app[theme="dark"] *::-webkit-scrollbar-track:hover,
+e2-app[theme="dark"] *::-webkit-scrollbar-track:active {
+  background-color: #1E1E1E;
+}
+
+e2-app[theme="dark"] *::-webkit-scrollbar-thumb {
+  border-radius: 0px;
+  background-color: #5F5F5F;
+}
+
+e2-app[theme="dark"] *::-webkit-scrollbar-thumb:hover,
+e2-app[theme="dark"] *::-webkit-scrollbar-thumb:active {
+  background-color: #9E9E9E;
 }

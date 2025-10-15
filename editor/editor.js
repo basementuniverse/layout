@@ -1,11 +1,10 @@
 // Layout Editor
 
 // TODO
-// - properties editor needs full object
-// - schema in properties editor for validation
 // - handle value change in properties editor
 // - move grid button into settings dialog
-// - rest of settings... (use KVEditor?)
+// - rest of settings... use KeyValueEditor
+// - insert colours and other values from settings into getCanvasStyles
 
 // -----------------------------------------------------------------------------
 // Globals and editor state
@@ -13,19 +12,16 @@
 
 const TITLE = 'Layout';
 
-const DEFAULT_LAYOUT = {
-  root: {
-    id: 'default',
-    type: 'leaf',
-  },
+const LAYOUT = {
+  root: {},
 };
 
-const DEFAULT_DOCK_NODE = {
+const DOCK_NODE = {
   id: '',
   type: 'dock',
 };
 
-const DEFAULT_STACK_NODE = {
+const STACK_NODE = {
   id: '',
   type: 'stack',
   direction: 'vertical',
@@ -34,7 +30,7 @@ const DEFAULT_STACK_NODE = {
   children: [],
 };
 
-const DEFAULT_LEAF_NODE = {
+const LEAF_NODE = {
   id: '',
   type: 'leaf',
 };
@@ -101,7 +97,7 @@ let newToolbarButton,
   themeSwitch;
 
 // Data views
-let treeView, propertyEditor, historyView;
+let treeView, propertiesTitle, propertyEditor, historyView;
 
 // Status bar
 let statusBar, mouseStatusBarItem, selectedStatusBarItem;
@@ -168,6 +164,7 @@ function initializeEditor() {
   properties = document.querySelector('aside.properties');
   history = document.querySelector('aside.history');
   treeView = document.getElementById('node-tree');
+  propertiesTitle = document.getElementById('properties-title');
   propertyEditor = document.getElementById('node-editor');
   historyView = document.getElementById('history-list');
   newToolbarButton = document.getElementById('new-toolbar-button');
@@ -561,6 +558,13 @@ function setupEventListeners() {
   document.addEventListener('listview-selection-change', e => {
     if (e.target === historyView) {
       handleHistorySelection(e);
+    }
+  });
+
+  // Properties editor changes
+  propertyEditor.addEventListener('keyvalue-change', event => {
+    if (event.detail.isValid) {
+      console.log('everything valid, would update layout');
     }
   });
 
@@ -1501,6 +1505,8 @@ function updatePropertyEditor() {
   if (!editorState.selectedNodeId || !editorState.layout) {
     // Clear property editor
     propertyEditor.value = {};
+    propertyEditor.schema = undefined;
+    propertiesTitle.innerText = 'Node Properties';
     return;
   }
 
@@ -1510,42 +1516,37 @@ function updatePropertyEditor() {
       editorState.layoutDefinition.root,
       editorState.selectedNodeId
     );
-    if (nodeData) {
-      // Convert node data to key-value format for the editor
-      const properties = {
-        id: nodeData.id,
-        type: nodeData.type,
-        ...(nodeData.size && {
-          'size.x': nodeData.size.x || 'auto',
-          'size.y': nodeData.size.y || 'auto',
-        }),
-        ...(nodeData.padding && {
-          'padding.x': nodeData.padding.x || '0px',
-          'padding.y': nodeData.padding.y || '0px',
-        }),
-        ...(nodeData.offset && {
-          'offset.x': nodeData.offset.x || '0px',
-          'offset.y': nodeData.offset.y || '0px',
-        }),
-        ...(nodeData.minSize && {
-          'minSize.x': nodeData.minSize.x,
-          'minSize.y': nodeData.minSize.y,
-        }),
-        ...(nodeData.maxSize && {
-          'maxSize.x': nodeData.maxSize.x,
-          'maxSize.y': nodeData.maxSize.y,
-        }),
-        ...(nodeData.aspectRatio !== undefined && {
-          aspectRatio: nodeData.aspectRatio,
-        }),
-        ...(nodeData.visible !== undefined && { visible: nodeData.visible }),
 
-        // Stack-specific properties
-        ...(nodeData.direction && { direction: nodeData.direction }),
-        ...(nodeData.align && { align: nodeData.align }),
-        ...(nodeData.gap && { gap: nodeData.gap }),
-      };
+    if (nodeData) {
+      let properties, schema;
+      switch (nodeData.type) {
+        case 'leaf':
+          properties = {
+            ...getBaseNodePropertiesWithDefaults(DEFAULT_LEAF_NODE, nodeData),
+          };
+          schema = LEAF_NODE_SCHEMA;
+          break;
+        case 'dock':
+          properties = {
+            ...getBaseNodePropertiesWithDefaults(DEFAULT_DOCK_NODE, nodeData),
+          };
+          schema = DOCK_NODE_SCHEMA;
+          break;
+        case 'stack':
+          properties = {
+            ...getBaseNodePropertiesWithDefaults(DEFAULT_STACK_NODE, nodeData),
+            direction: DEFAULT_STACK_NODE.direction || nodeData.direction,
+            align: DEFAULT_STACK_NODE.align || nodeData.align,
+            gap: DEFAULT_STACK_NODE.gap || nodeData.gap,
+          };
+          schema = STACK_NODE_SCHEMA;
+          break;
+      }
       propertyEditor.value = properties;
+      propertyEditor.schema = schema;
+      propertiesTitle.innerText = `${formatNodeTypeForPropertiesView(
+        nodeData.type
+      )} Properties`;
     }
   } catch (error) {
     console.error('Error updating property editor:', error);
@@ -2061,14 +2062,14 @@ function getCanvasStyles() {
 
 function createDockNode() {
   return {
-    ...DEFAULT_DOCK_NODE,
+    ...DOCK_NODE,
     id: generateUniqueId('dock'),
   };
 }
 
 function createStackNode() {
   return {
-    ...DEFAULT_STACK_NODE,
+    ...STACK_NODE,
     id: generateUniqueId('stack'),
     children: [],
   };
@@ -2076,8 +2077,15 @@ function createStackNode() {
 
 function createLeafNode() {
   return {
-    ...DEFAULT_LEAF_NODE,
+    ...LEAF_NODE,
     id: generateUniqueId('leaf'),
+  };
+}
+
+function createLayout() {
+  return {
+    ...LAYOUT,
+    root: createLeafNode(),
   };
 }
 
@@ -2085,7 +2093,7 @@ function newLayout() {
   clearHistory();
   const snapshot = preActionSnapshot('New layout');
 
-  initialiseLayout(cloneLayoutDefinition(DEFAULT_LAYOUT));
+  initialiseLayout(createLayout());
 
   postActionSnapshot(snapshot);
 
@@ -2417,138 +2425,42 @@ function formatDateForHistoryView(date) {
     .padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
 }
 
-// -----------------------------------------------------------------------------
-// Validators
-// -----------------------------------------------------------------------------
-
-function isLayoutData(data) {
-  if (!data || typeof data !== 'object') {
-    throw new Error('Invalid layout (not an object)');
-  }
-  if (!data.root || typeof data.root !== 'object') {
-    throw new Error('Invalid layout (no root node)');
-  }
-  isLayoutNodeData(data.root);
-  return true;
+function formatNodeTypeForPropertiesView(nodeType) {
+  return (
+    {
+      leaf: 'Leaf Node',
+      dock: 'Dock Node',
+      stack: 'Stack Node',
+    }[nodeType] || 'Unknown Node'
+  );
 }
 
-function isLayoutNodeData(node) {
-  if (!node || typeof node !== 'object') {
-    throw new Error('Invalid node (not an object)');
-  }
-  if (!node.id || typeof node.id !== 'string') {
-    throw new Error('Invalid node (missing or invalid id)');
-  }
-  if (!node.type || !['dock', 'stack', 'leaf'].includes(node.type)) {
-    throw new Error('Invalid node (missing or invalid type)');
-  }
-  if (node.offset && !isLayoutVec2(node.offset)) {
-    throw new Error('Invalid node (invalid offset)');
-  }
-  if (node.padding && !isLayoutVec2(node.padding)) {
-    throw new Error('Invalid node (invalid padding)');
-  }
-  if (node.size && !isPartialLayoutVec2(node.size)) {
-    throw new Error('Invalid node (invalid size)');
-  }
-  if (node.minSize && !isPartialLayoutVec2(node.minSize)) {
-    throw new Error('Invalid node (invalid minSize)');
-  }
-  if (node.maxSize && !isPartialLayoutVec2(node.maxSize)) {
-    throw new Error('Invalid node (invalid maxSize)');
-  }
-  if (node.aspectRatio !== undefined && typeof node.aspectRatio !== 'number') {
-    throw new Error('Invalid node (invalid aspectRatio)');
-  }
-  if (node.visible !== undefined && typeof node.visible !== 'boolean') {
-    throw new Error('Invalid node (invalid visible)');
-  }
-  switch (node.type) {
-    case 'dock':
-      isDockLayoutNodeData(node);
-      break;
-    case 'stack':
-      isStackLayoutNodeData(node);
-      break;
-    case 'leaf':
-      isLeafLayoutNodeData(node);
-      break;
-    default:
-      throw new Error('Invalid node (unknown type)');
-  }
-  return true;
-}
-
-function isDockLayoutNodeData(node) {
-  if (node.type !== 'dock') {
-    throw new Error('Node is not a dock type');
-  }
-  const dockPositions = [
-    'topLeft',
-    'topCenter',
-    'topRight',
-    'leftCenter',
-    'center',
-    'rightCenter',
-    'bottomLeft',
-    'bottomCenter',
-    'bottomRight',
-  ];
-  for (const position of dockPositions) {
-    if (node[position] !== undefined) {
-      isLayoutNodeData(node[position]);
-    }
-  }
-  return true;
-}
-
-function isStackLayoutNodeData(node) {
-  if (node.type !== 'stack') {
-    throw new Error('Node is not a stack type');
-  }
-  if (!['vertical', 'horizontal'].includes(node.direction)) {
-    throw new Error('Invalid stack node (missing or invalid direction)');
-  }
-  if (
-    node.align &&
-    !['start', 'center', 'end', 'stretch'].includes(node.align)
-  ) {
-    throw new Error('Invalid stack node (invalid align)');
-  }
-  if (node.gap !== undefined && typeof node.gap !== 'string') {
-    throw new Error('Invalid stack node (invalid gap)');
-  }
-  if (
-    !node.children ||
-    !Array.isArray(node.children) ||
-    node.children.length === 0
-  ) {
-    throw new Error('Invalid stack node (missing or empty children array)');
-  }
-  for (const child of node.children) {
-    isLayoutNodeData(child);
-  }
-  return true;
-}
-
-function isLeafLayoutNodeData(node) {
-  if (node.type !== 'leaf') {
-    throw new Error('Node is not a leaf type');
-  }
-  return true;
-}
-
-function isLayoutVec2(value) {
-  if (!value || typeof value !== 'object') return false;
-  if (typeof value.x !== 'string' || typeof value.y !== 'string') return false;
-  return true;
-}
-
-function isPartialLayoutVec2(value) {
-  if (!value || typeof value !== 'object') return false;
-  if (value.x !== undefined && typeof value.x !== 'string') return false;
-  if (value.y !== undefined && typeof value.y !== 'string') return false;
-  return true;
+function getBaseNodePropertiesWithDefaults(defaultNode, nodeData) {
+  return {
+    id: nodeData.id ?? '',
+    offset: {
+      ...defaultNode.offset,
+      ...nodeData.offset,
+    },
+    padding: {
+      ...defaultNode.padding,
+      ...nodeData.padding,
+    },
+    size: {
+      ...defaultNode.size,
+      ...nodeData.size,
+    },
+    minSize: {
+      ...defaultNode.minSize,
+      ...nodeData.minSize,
+    },
+    maxSize: {
+      ...defaultNode.maxSize,
+      ...nodeData.maxSize,
+    },
+    aspectRatio: nodeData.aspectRatio ?? defaultNode.aspectRatio,
+    visible: nodeData.visible ?? defaultNode.visible,
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -3184,4 +3096,231 @@ function deleteNodeFromDefinition(node, targetId) {
   }
 
   return false;
+}
+
+// -----------------------------------------------------------------------------
+// Properties editor defaults and schemas
+// -----------------------------------------------------------------------------
+
+const DEFAULT_NODE = {
+  offset: { x: '0px', y: '0px' },
+  padding: { x: '0px', y: '0px' },
+  size: { x: 'auto', y: 'auto' },
+  minSize: { x: '0px', y: '0px' },
+  maxSize: { x: '100%', y: '100%' },
+  aspectRatio: 0,
+  visible: true,
+};
+
+const DEFAULT_DOCK_NODE = {
+  ...DEFAULT_NODE,
+};
+
+const DEFAULT_STACK_NODE = {
+  ...DEFAULT_NODE,
+  direction: 'vertical',
+  align: 'stretch',
+  gap: '0px',
+};
+
+const DEFAULT_LEAF_NODE = {
+  ...DEFAULT_NODE,
+};
+
+const MEASUREMENT_SCHEMA = {
+  oneOf: [
+    { type: 'string', pattern: '^[0-9]+(px|%)$' },
+    { type: 'string', enum: ['auto'] },
+  ],
+};
+
+const LAYOUT_VEC2_SCHEMA = {
+  type: 'object',
+  properties: {
+    x: MEASUREMENT_SCHEMA,
+    y: MEASUREMENT_SCHEMA,
+  },
+  required: ['x', 'y'],
+};
+
+const PARTIAL_LAYOUT_VEC2_SCHEMA = {
+  type: 'object',
+  properties: {
+    x: MEASUREMENT_SCHEMA,
+    y: MEASUREMENT_SCHEMA,
+  },
+};
+
+const NODE_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', minLength: 1 },
+    offset: LAYOUT_VEC2_SCHEMA,
+    padding: LAYOUT_VEC2_SCHEMA,
+    size: PARTIAL_LAYOUT_VEC2_SCHEMA,
+    minSize: PARTIAL_LAYOUT_VEC2_SCHEMA,
+    maxSize: PARTIAL_LAYOUT_VEC2_SCHEMA,
+    aspectRatio: { type: 'number', minimum: 0 },
+    visible: { type: 'boolean' },
+  },
+  required: ['id'],
+};
+
+const DOCK_NODE_SCHEMA = {
+  ...NODE_SCHEMA,
+  properties: {
+    ...NODE_SCHEMA.properties,
+  },
+};
+
+const STACK_NODE_SCHEMA = {
+  ...NODE_SCHEMA,
+  properties: {
+    ...NODE_SCHEMA.properties,
+    direction: { type: 'string', enum: ['horizontal', 'vertical'] },
+    align: { type: 'string', enum: ['start', 'center', 'end', 'stretch'] },
+    gap: MEASUREMENT_SCHEMA,
+  },
+  required: [...NODE_SCHEMA.required, 'direction'],
+};
+
+const LEAF_NODE_SCHEMA = {
+  ...NODE_SCHEMA,
+  properties: {
+    ...NODE_SCHEMA.properties,
+  },
+};
+
+// -----------------------------------------------------------------------------
+// Validators
+// -----------------------------------------------------------------------------
+
+function isLayoutData(data) {
+  if (!data || typeof data !== 'object') {
+    throw new Error('Invalid layout (not an object)');
+  }
+  if (!data.root || typeof data.root !== 'object') {
+    throw new Error('Invalid layout (no root node)');
+  }
+  isLayoutNodeData(data.root);
+  return true;
+}
+
+function isLayoutNodeData(node) {
+  if (!node || typeof node !== 'object') {
+    throw new Error('Invalid node (not an object)');
+  }
+  if (!node.id || typeof node.id !== 'string') {
+    throw new Error('Invalid node (missing or invalid id)');
+  }
+  if (!node.type || !['dock', 'stack', 'leaf'].includes(node.type)) {
+    throw new Error('Invalid node (missing or invalid type)');
+  }
+  if (node.offset && !isLayoutVec2(node.offset)) {
+    throw new Error('Invalid node (invalid offset)');
+  }
+  if (node.padding && !isLayoutVec2(node.padding)) {
+    throw new Error('Invalid node (invalid padding)');
+  }
+  if (node.size && !isPartialLayoutVec2(node.size)) {
+    throw new Error('Invalid node (invalid size)');
+  }
+  if (node.minSize && !isPartialLayoutVec2(node.minSize)) {
+    throw new Error('Invalid node (invalid minSize)');
+  }
+  if (node.maxSize && !isPartialLayoutVec2(node.maxSize)) {
+    throw new Error('Invalid node (invalid maxSize)');
+  }
+  if (node.aspectRatio !== undefined && typeof node.aspectRatio !== 'number') {
+    throw new Error('Invalid node (invalid aspectRatio)');
+  }
+  if (node.visible !== undefined && typeof node.visible !== 'boolean') {
+    throw new Error('Invalid node (invalid visible)');
+  }
+  switch (node.type) {
+    case 'dock':
+      isDockLayoutNodeData(node);
+      break;
+    case 'stack':
+      isStackLayoutNodeData(node);
+      break;
+    case 'leaf':
+      isLeafLayoutNodeData(node);
+      break;
+    default:
+      throw new Error('Invalid node (unknown type)');
+  }
+  return true;
+}
+
+function isDockLayoutNodeData(node) {
+  if (node.type !== 'dock') {
+    throw new Error('Node is not a dock type');
+  }
+  const dockPositions = [
+    'topLeft',
+    'topCenter',
+    'topRight',
+    'leftCenter',
+    'center',
+    'rightCenter',
+    'bottomLeft',
+    'bottomCenter',
+    'bottomRight',
+  ];
+  for (const position of dockPositions) {
+    if (node[position] !== undefined) {
+      isLayoutNodeData(node[position]);
+    }
+  }
+  return true;
+}
+
+function isStackLayoutNodeData(node) {
+  if (node.type !== 'stack') {
+    throw new Error('Node is not a stack type');
+  }
+  if (!['vertical', 'horizontal'].includes(node.direction)) {
+    throw new Error('Invalid stack node (missing or invalid direction)');
+  }
+  if (
+    node.align &&
+    !['start', 'center', 'end', 'stretch'].includes(node.align)
+  ) {
+    throw new Error('Invalid stack node (invalid align)');
+  }
+  if (node.gap !== undefined && typeof node.gap !== 'string') {
+    throw new Error('Invalid stack node (invalid gap)');
+  }
+  if (
+    !node.children ||
+    !Array.isArray(node.children) ||
+    node.children.length === 0
+  ) {
+    throw new Error('Invalid stack node (missing or empty children array)');
+  }
+  for (const child of node.children) {
+    isLayoutNodeData(child);
+  }
+  return true;
+}
+
+function isLeafLayoutNodeData(node) {
+  if (node.type !== 'leaf') {
+    throw new Error('Node is not a leaf type');
+  }
+  return true;
+}
+
+function isLayoutVec2(value) {
+  if (!value || typeof value !== 'object') return false;
+  if (typeof value.x !== 'string' || typeof value.y !== 'string') return false;
+  return true;
+}
+
+function isPartialLayoutVec2(value) {
+  if (!value || typeof value !== 'object') return false;
+  if (value.x !== undefined && typeof value.x !== 'string') return false;
+  if (value.y !== undefined && typeof value.y !== 'string') return false;
+  return true;
 }
