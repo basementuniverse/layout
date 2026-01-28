@@ -1679,11 +1679,14 @@ function handleDragEnd() {
   const nodeData = findNodeById(nodeId);
 
   // Only create history snapshot if offset actually changed
-  if (
+  // Normalize values: use '0px' default for both current and start values
+  const currentX = nodeData?.offset?.x || '0px';
+  const currentY = nodeData?.offset?.y || '0px';
+  const offsetChanged =
     nodeData &&
-    (nodeData.offset?.x !== startNodeOffset.x ||
-      nodeData.offset?.y !== startNodeOffset.y)
-  ) {
+    (currentX !== startNodeOffset.x || currentY !== startNodeOffset.y);
+
+  if (offsetChanged) {
     const snapshot = preActionSnapshot(`Move ${nodeId}`);
     postActionSnapshot(snapshot);
     editorState.dirty = true;
@@ -1945,13 +1948,20 @@ function handleResizeEnd() {
   const nodeData = findNodeById(nodeId);
 
   // Only create history snapshot if size or offset actually changed
-  if (
+  // Normalize values to match how they're stored initially
+  const currentOffsetX = nodeData?.offset?.x || '0px';
+  const currentOffsetY = nodeData?.offset?.y || '0px';
+  const currentSizeX = nodeData?.size?.x || 'auto';
+  const currentSizeY = nodeData?.size?.y || 'auto';
+
+  const changed =
     nodeData &&
-    (nodeData.offset?.x !== startNodeOffset.x ||
-      nodeData.offset?.y !== startNodeOffset.y ||
-      nodeData.size?.x !== startNodeSize.x ||
-      nodeData.size?.y !== startNodeSize.y)
-  ) {
+    (currentOffsetX !== startNodeOffset.x ||
+      currentOffsetY !== startNodeOffset.y ||
+      currentSizeX !== startNodeSize.x ||
+      currentSizeY !== startNodeSize.y);
+
+  if (changed) {
     const snapshot = preActionSnapshot(`Resize ${nodeId}`);
     postActionSnapshot(snapshot);
     editorState.dirty = true;
