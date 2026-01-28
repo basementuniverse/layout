@@ -5,6 +5,7 @@
 // -----------------------------------------------------------------------------
 
 const TITLE = 'Layout';
+const RESIZE_HANDLE_SIZE = 10;
 
 const editorState = {
   dirty: false,
@@ -15,6 +16,21 @@ const editorState = {
   contextNodeId: null,
   canvasSize: { x: 0, y: 0 },
   mousePosition: { x: 0, y: 0 },
+  dragState: {
+    isDragging: false,
+    nodeId: null,
+    startMousePos: { x: 0, y: 0 },
+    startNodeOffset: { x: '0px', y: '0px' },
+  },
+  resizeState: {
+    isResizing: false,
+    nodeId: null,
+    handle: null, // 'n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'
+    startMousePos: { x: 0, y: 0 },
+    startNodeBounds: { x: 0, y: 0, width: 0, height: 0 },
+    startNodeOffset: { x: '0px', y: '0px' },
+    startNodeSize: { x: 'auto', y: 'auto' },
+  },
   history: {
     snapshots: [],
     currentIndex: -1,
@@ -68,6 +84,27 @@ const CANVAS_STYLES = {
       markerStyle: '+',
       markerSize: 8,
     },
+    hiddenNode: {
+      fill: false,
+      stroke: true,
+      strokeColor: '#00000040',
+      strokeWidth: 2,
+      lineStyle: 'dotted',
+      rounded: true,
+      borderRadius: 6,
+      opacity: 0.5,
+    },
+    selectedHiddenNode: {
+      fill: true,
+      fillColor: '#0078d422',
+      stroke: true,
+      strokeColor: '#0078d466',
+      strokeWidth: 2,
+      lineStyle: 'dotted',
+      rounded: true,
+      borderRadius: 6,
+      opacity: 0.5,
+    },
   },
   dark: {
     background: '#000000',
@@ -104,6 +141,27 @@ const CANVAS_STYLES = {
       markerColour: '#0078d4',
       markerStyle: '+',
       markerSize: 8,
+    },
+    hiddenNode: {
+      fill: false,
+      stroke: true,
+      strokeColor: '#ffffff77',
+      strokeWidth: 2,
+      lineStyle: 'dashed',
+      rounded: true,
+      borderRadius: 6,
+      opacity: 0.5,
+    },
+    selectedHiddenNode: {
+      fill: true,
+      fillColor: '#0078d422',
+      stroke: true,
+      strokeColor: '#0078d4cc',
+      strokeWidth: 2,
+      lineStyle: 'dashed',
+      rounded: true,
+      borderRadius: 6,
+      opacity: 0.5,
     },
   },
   guide: {
@@ -429,14 +487,65 @@ function setupEventListeners() {
       y: Math.round(e.clientY - rect.top) - editorState.settings.editorMargin,
     };
     updateStatusBar();
+
+    // Handle resizing
+    if (editorState.resizeState.isResizing) {
+      handleResize(editorState.mousePosition.x, editorState.mousePosition.y);
+    }
+    // Handle dragging
+    else if (editorState.dragState.isDragging) {
+      handleDrag(editorState.mousePosition.x, editorState.mousePosition.y);
+    }
+    // Update cursor based on resize handle detection
+    else {
+      updateCursorForResizeHandle(
+        editorState.mousePosition.x,
+        editorState.mousePosition.y
+      );
+    }
   });
 
-  // Content area click for selection
-  content.addEventListener('click', e => {
-    handleContentAreaClick(
+  // Content area mousedown for selection and drag start
+  content.addEventListener('mousedown', e => {
+    // Only handle left mouse button
+    if (e.button !== 0) return;
+
+    // Check for resize handle first (takes priority)
+    const resizeHandle = detectResizeHandle(
       editorState.mousePosition.x,
       editorState.mousePosition.y
     );
+
+    if (resizeHandle) {
+      handleResizeStart(
+        editorState.mousePosition.x,
+        editorState.mousePosition.y,
+        resizeHandle
+      );
+    } else {
+      handleContentAreaMouseDown(
+        editorState.mousePosition.x,
+        editorState.mousePosition.y
+      );
+    }
+  });
+
+  // Content area mouseup for drag/resize end
+  content.addEventListener('mouseup', e => {
+    if (editorState.resizeState.isResizing) {
+      handleResizeEnd();
+    } else if (editorState.dragState.isDragging) {
+      handleDragEnd();
+    }
+  });
+
+  // Global mouseup to handle drag/resize end when mouse leaves canvas
+  document.addEventListener('mouseup', e => {
+    if (editorState.resizeState.isResizing) {
+      handleResizeEnd();
+    } else if (editorState.dragState.isDragging) {
+      handleDragEnd();
+    }
   });
 
   // Keyboard events
@@ -1477,7 +1586,7 @@ function handleContextMenuAction(action) {
   }
 }
 
-function handleContentAreaClick(x, y) {
+function handleContentAreaMouseDown(x, y) {
   if (!editorState.layout) return;
 
   // Find the node at the clicked position
@@ -1487,6 +1596,21 @@ function handleContentAreaClick(x, y) {
 
     // Set selected node
     editorState.selectedNodeId = clickedNodeId;
+
+    // Initialize drag state
+    const nodeData = findNodeById(clickedNodeId);
+    editorState.dragState = {
+      isDragging: true,
+      nodeId: clickedNodeId,
+      startMousePos: { x, y },
+      startNodeOffset: {
+        x: nodeData.offset?.x || '0px',
+        y: nodeData.offset?.y || '0px',
+      },
+    };
+
+    // Change cursor
+    canvas.style.cursor = 'move';
 
     syncTreeViewSelection(clickedNodeId);
     updatePropertyEditor();
@@ -1503,6 +1627,352 @@ function handleContentAreaClick(x, y) {
     updateStatusBar();
     updateToolbarButtons();
   }
+}
+
+function handleDrag(x, y) {
+  if (!editorState.dragState.isDragging || !editorState.dragState.nodeId)
+    return;
+
+  const { nodeId, startMousePos, startNodeOffset } = editorState.dragState;
+  const nodeData = findNodeById(nodeId);
+  if (!nodeData) return;
+
+  // Calculate delta
+  const deltaX = x - startMousePos.x;
+  const deltaY = y - startMousePos.y;
+
+  // Get parent node to calculate percentages correctly
+  const parentNode = findParentNodeById(nodeId);
+  const parentCalculated = parentNode
+    ? editorState.layout.get(parentNode.id)
+    : null;
+
+  // Calculate new offset based on original unit type
+  const newOffset = {
+    x: calculateNewOffset(startNodeOffset.x, deltaX, parentCalculated, 'x'),
+    y: calculateNewOffset(startNodeOffset.y, deltaY, parentCalculated, 'y'),
+  };
+
+  // Update node offset (without creating history snapshot during drag)
+  const updatedNodeData = {
+    ...nodeData,
+    offset: newOffset,
+  };
+
+  // Update in definition
+  const result = updateNodeInDefinition(
+    editorState.layoutDefinition.root,
+    nodeId,
+    updatedNodeData
+  );
+
+  if (result) {
+    updateLayout(editorState.layoutDefinition);
+    updatePropertyEditor();
+  }
+}
+
+function handleDragEnd() {
+  if (!editorState.dragState.isDragging) return;
+
+  const { nodeId, startNodeOffset } = editorState.dragState;
+  const nodeData = findNodeById(nodeId);
+
+  // Only create history snapshot if offset actually changed
+  if (
+    nodeData &&
+    (nodeData.offset?.x !== startNodeOffset.x ||
+      nodeData.offset?.y !== startNodeOffset.y)
+  ) {
+    const snapshot = preActionSnapshot(`Move ${nodeId}`);
+    postActionSnapshot(snapshot);
+    editorState.dirty = true;
+    updateTitle();
+  }
+
+  // Reset drag state
+  editorState.dragState = {
+    isDragging: false,
+    nodeId: null,
+    startMousePos: { x: 0, y: 0 },
+    startNodeOffset: { x: '0px', y: '0px' },
+  };
+
+  // Reset cursor
+  canvas.style.cursor = 'default';
+
+  console.log('Drag ended');
+}
+
+function detectResizeHandle(x, y) {
+  if (!editorState.layout || !editorState.selectedNodeId) return null;
+
+  const node = editorState.layout.get(editorState.selectedNodeId);
+  if (!node) return null;
+
+  const { left, right, top, bottom } = node;
+  const handleSize = RESIZE_HANDLE_SIZE;
+
+  // Check corners first (they take priority)
+  if (
+    x >= left - handleSize &&
+    x <= left + handleSize &&
+    y >= top - handleSize &&
+    y <= top + handleSize
+  ) {
+    return 'nw';
+  }
+  if (
+    x >= right - handleSize &&
+    x <= right + handleSize &&
+    y >= top - handleSize &&
+    y <= top + handleSize
+  ) {
+    return 'ne';
+  }
+  if (
+    x >= left - handleSize &&
+    x <= left + handleSize &&
+    y >= bottom - handleSize &&
+    y <= bottom + handleSize
+  ) {
+    return 'sw';
+  }
+  if (
+    x >= right - handleSize &&
+    x <= right + handleSize &&
+    y >= bottom - handleSize &&
+    y <= bottom + handleSize
+  ) {
+    return 'se';
+  }
+
+  // Check edges
+  if (
+    y >= top - handleSize &&
+    y <= top + handleSize &&
+    x >= left &&
+    x <= right
+  ) {
+    return 'n';
+  }
+  if (
+    y >= bottom - handleSize &&
+    y <= bottom + handleSize &&
+    x >= left &&
+    x <= right
+  ) {
+    return 's';
+  }
+  if (
+    x >= left - handleSize &&
+    x <= left + handleSize &&
+    y >= top &&
+    y <= bottom
+  ) {
+    return 'w';
+  }
+  if (
+    x >= right - handleSize &&
+    x <= right + handleSize &&
+    y >= top &&
+    y <= bottom
+  ) {
+    return 'e';
+  }
+
+  return null;
+}
+
+function updateCursorForResizeHandle(x, y) {
+  const handle = detectResizeHandle(x, y);
+
+  if (!handle) {
+    canvas.style.cursor = 'default';
+    return;
+  }
+
+  const cursorMap = {
+    n: 'n-resize',
+    s: 's-resize',
+    e: 'e-resize',
+    w: 'w-resize',
+    ne: 'ne-resize',
+    nw: 'nw-resize',
+    se: 'se-resize',
+    sw: 'sw-resize',
+  };
+
+  canvas.style.cursor = cursorMap[handle] || 'default';
+}
+
+function handleResizeStart(x, y, handle) {
+  if (!editorState.selectedNodeId) return;
+
+  const nodeData = findNodeById(editorState.selectedNodeId);
+  const calculatedNode = editorState.layout.get(editorState.selectedNodeId);
+  if (!nodeData || !calculatedNode) return;
+
+  console.log('Resize started:', handle);
+
+  editorState.resizeState = {
+    isResizing: true,
+    nodeId: editorState.selectedNodeId,
+    handle,
+    startMousePos: { x, y },
+    startNodeBounds: {
+      x: calculatedNode.left,
+      y: calculatedNode.top,
+      width: calculatedNode.width,
+      height: calculatedNode.height,
+    },
+    startNodeOffset: {
+      x: nodeData.offset?.x || '0px',
+      y: nodeData.offset?.y || '0px',
+    },
+    startNodeSize: {
+      x: nodeData.size?.x || 'auto',
+      y: nodeData.size?.y || 'auto',
+    },
+  };
+}
+
+function handleResize(x, y) {
+  if (!editorState.resizeState.isResizing || !editorState.resizeState.nodeId)
+    return;
+
+  const {
+    nodeId,
+    handle,
+    startMousePos,
+    startNodeBounds,
+    startNodeOffset,
+    startNodeSize,
+  } = editorState.resizeState;
+  const nodeData = findNodeById(nodeId);
+  if (!nodeData) return;
+
+  const deltaX = x - startMousePos.x;
+  const deltaY = y - startMousePos.y;
+
+  // Get parent node to calculate percentages correctly
+  const parentNode = findParentNodeById(nodeId);
+  const parentCalculated = parentNode
+    ? editorState.layout.get(parentNode.id)
+    : null;
+
+  let newOffset = { ...startNodeOffset };
+  let newSize = { ...startNodeSize };
+
+  // Calculate new size and offset based on resize handle
+  if (handle.includes('n')) {
+    // Top edge: offset increases, height decreases
+    newOffset.y = calculateNewOffset(
+      startNodeOffset.y,
+      deltaY,
+      parentCalculated,
+      'y'
+    );
+    newSize.y = calculateNewSize(
+      startNodeSize.y,
+      -deltaY,
+      startNodeBounds.height,
+      parentCalculated,
+      'y'
+    );
+  }
+  if (handle.includes('s')) {
+    // Bottom edge: height increases
+    newSize.y = calculateNewSize(
+      startNodeSize.y,
+      deltaY,
+      startNodeBounds.height,
+      parentCalculated,
+      'y'
+    );
+  }
+  if (handle.includes('w')) {
+    // Left edge: offset increases, width decreases
+    newOffset.x = calculateNewOffset(
+      startNodeOffset.x,
+      deltaX,
+      parentCalculated,
+      'x'
+    );
+    newSize.x = calculateNewSize(
+      startNodeSize.x,
+      -deltaX,
+      startNodeBounds.width,
+      parentCalculated,
+      'x'
+    );
+  }
+  if (handle.includes('e')) {
+    // Right edge: width increases
+    newSize.x = calculateNewSize(
+      startNodeSize.x,
+      deltaX,
+      startNodeBounds.width,
+      parentCalculated,
+      'x'
+    );
+  }
+
+  // Update node
+  const updatedNodeData = {
+    ...nodeData,
+    offset: newOffset,
+    size: newSize,
+  };
+
+  // Update in definition
+  const result = updateNodeInDefinition(
+    editorState.layoutDefinition.root,
+    nodeId,
+    updatedNodeData
+  );
+
+  if (result) {
+    updateLayout(editorState.layoutDefinition);
+    updatePropertyEditor();
+  }
+}
+
+function handleResizeEnd() {
+  if (!editorState.resizeState.isResizing) return;
+
+  const { nodeId, startNodeOffset, startNodeSize } = editorState.resizeState;
+  const nodeData = findNodeById(nodeId);
+
+  // Only create history snapshot if size or offset actually changed
+  if (
+    nodeData &&
+    (nodeData.offset?.x !== startNodeOffset.x ||
+      nodeData.offset?.y !== startNodeOffset.y ||
+      nodeData.size?.x !== startNodeSize.x ||
+      nodeData.size?.y !== startNodeSize.y)
+  ) {
+    const snapshot = preActionSnapshot(`Resize ${nodeId}`);
+    postActionSnapshot(snapshot);
+    editorState.dirty = true;
+    updateTitle();
+  }
+
+  // Reset resize state
+  editorState.resizeState = {
+    isResizing: false,
+    nodeId: null,
+    handle: null,
+    startMousePos: { x: 0, y: 0 },
+    startNodeBounds: { x: 0, y: 0, width: 0, height: 0 },
+    startNodeOffset: { x: '0px', y: '0px' },
+    startNodeSize: { x: 'auto', y: 'auto' },
+  };
+
+  // Reset cursor
+  canvas.style.cursor = 'default';
+
+  console.log('Resize ended');
 }
 
 function handleTreeSelection(event) {
@@ -2070,26 +2540,46 @@ function drawLayoutNodes(styles) {
   const nodeIds = editorState.layout.getNodeIds();
   nodeIds.forEach(nodeId => {
     const calculatedNode = editorState.layout.get(nodeId);
-    if (calculatedNode && calculatedNode.visible) {
+    if (calculatedNode) {
       drawNode(calculatedNode, nodeId, styles);
     }
   });
 }
 
 function drawNode(calculatedNode, nodeId, styles) {
+  const isSelected = editorState.selectedNodeId === nodeId;
+  const isHidden = !calculatedNode.visible;
+
+  // Determine which style to use
+  let nodeStyle;
+  if (isHidden && isSelected) {
+    nodeStyle = styles[editorState.settings.theme].selectedHiddenNode;
+  } else if (isHidden) {
+    nodeStyle = styles[editorState.settings.theme].hiddenNode;
+  } else if (isSelected) {
+    nodeStyle = styles[editorState.settings.theme].selectedNode;
+  } else {
+    nodeStyle = styles[editorState.settings.theme].node;
+  }
+
+  // Apply opacity if the node is hidden
+  if (isHidden) {
+    context.save();
+    context.globalAlpha = 0.5;
+  }
+
   drawRectangle(
     { x: calculatedNode.left, y: calculatedNode.top },
     { x: calculatedNode.width, y: calculatedNode.height },
-    editorState.selectedNodeId === nodeId
-      ? styles[editorState.settings.theme].selectedNode
-      : styles[editorState.settings.theme].node
+    nodeStyle
   );
 
-  if (editorState.selectedNodeId === nodeId) {
-    // Draw node ID label
+  if (isSelected) {
+    // Draw node ID label with (hidden) suffix if not visible
+    const labelText = isHidden ? `${nodeId} (hidden)` : nodeId;
     Debug.marker(
       `${nodeId}-label`,
-      nodeId,
+      labelText,
       {
         x: calculatedNode.left + 4,
         y: calculatedNode.top + 4,
@@ -2107,6 +2597,11 @@ function drawNode(calculatedNode, nodeId, styles) {
       showValue: false,
       ...styles[editorState.settings.theme].selectedNodeCenterMarker,
     });
+  }
+
+  // Restore opacity if it was changed
+  if (isHidden) {
+    context.restore();
   }
 }
 
@@ -2197,6 +2692,7 @@ function newLayout() {
 
   editorState.layoutName = '';
   editorState.dirty = false;
+  saveToolbarButton?.removeAttribute('disabled');
   updateTitle();
 
   // Show success message
@@ -2228,6 +2724,7 @@ function openLayout() {
 
           editorState.layoutName = file.name.replace(/\.json$/i, '');
           editorState.dirty = false;
+          saveToolbarButton?.removeAttribute('disabled');
           updateTitle();
 
           // Show success message
@@ -2503,7 +3000,7 @@ function findNodeIdAtPosition(x, y) {
   const nodeAreas = nodeIds
     .map(id => {
       const node = editorState.layout.get(id);
-      if (!node || !node.visible) return null;
+      if (!node) return null;
       return {
         id,
         node,
@@ -2593,6 +3090,127 @@ function debounce(fn, wait) {
       fn(...args);
     }, wait);
   };
+}
+
+function parseMeasurement(value) {
+  if (value === 'auto') return { value: 0, unit: 'auto' };
+
+  const match = value.match(/^([0-9.-]+)(px|%)$/);
+  if (match) {
+    return {
+      value: parseFloat(match[1]),
+      unit: match[2],
+    };
+  }
+
+  // Default to px
+  return { value: 0, unit: 'px' };
+}
+
+function calculateNewOffset(originalOffset, delta, parentCalculated, axis) {
+  const parsed = parseMeasurement(originalOffset);
+
+  // Auto always means 0
+  if (parsed.unit === 'auto') {
+    return `${delta}px`;
+  }
+
+  // For px, just add the delta
+  if (parsed.unit === 'px') {
+    return `${Math.round(parsed.value + delta)}px`;
+  }
+
+  // For %, calculate relative to parent size
+  if (parsed.unit === '%' && parentCalculated) {
+    const parentSize =
+      axis === 'x' ? parentCalculated.width : parentCalculated.height;
+    const currentPx = (parsed.value / 100) * parentSize;
+    const newPx = currentPx + delta;
+    const newPercent = (newPx / parentSize) * 100;
+    return `${Math.round(newPercent * 100) / 100}%`;
+  }
+
+  // Fallback to px
+  return `${Math.round(parsed.value + delta)}px`;
+}
+
+function calculateNewSize(
+  originalSize,
+  delta,
+  currentSizePx,
+  parentCalculated,
+  axis
+) {
+  const parsed = parseMeasurement(originalSize);
+
+  // Auto: convert to px with the delta applied
+  if (parsed.unit === 'auto') {
+    const newSize = currentSizePx + delta;
+    return `${Math.max(0, Math.round(newSize))}px`;
+  }
+
+  // For px, just add the delta
+  if (parsed.unit === 'px') {
+    const newSize = parsed.value + delta;
+    return `${Math.max(0, Math.round(newSize))}px`;
+  }
+
+  // For %, calculate relative to parent size
+  if (parsed.unit === '%' && parentCalculated) {
+    const parentSize =
+      axis === 'x' ? parentCalculated.width : parentCalculated.height;
+    const currentPx = (parsed.value / 100) * parentSize;
+    const newPx = currentPx + delta;
+    const newPercent = (newPx / parentSize) * 100;
+    return `${Math.max(0, Math.round(newPercent * 100) / 100)}%`;
+  }
+
+  // Fallback to px
+  const newSize = currentSizePx + delta;
+  return `${Math.max(0, Math.round(newSize))}px`;
+}
+
+function updateNodeInDefinition(node, targetId, updatedData) {
+  if (node.id === targetId) {
+    // Update the node properties
+    Object.assign(node, updatedData);
+    return true;
+  }
+
+  // Search in children based on node type
+  switch (node.type) {
+    case 'dock':
+      const dockPositions = [
+        'topLeft',
+        'topCenter',
+        'topRight',
+        'leftCenter',
+        'center',
+        'rightCenter',
+        'bottomLeft',
+        'bottomCenter',
+        'bottomRight',
+      ];
+      for (const position of dockPositions) {
+        if (
+          node[position] &&
+          updateNodeInDefinition(node[position], targetId, updatedData)
+        ) {
+          return true;
+        }
+      }
+      break;
+    case 'stack':
+      if (node.children) {
+        for (const child of node.children) {
+          if (updateNodeInDefinition(child, targetId, updatedData)) {
+            return true;
+          }
+        }
+      }
+      break;
+  }
+  return false;
 }
 
 // -----------------------------------------------------------------------------
@@ -3314,9 +3932,12 @@ const DEFAULT_LEAF_NODE = {
   ...DEFAULT_NODE,
 };
 
+const NUMBER_REGEX = '-?[0-9]+(\\.[0-9]+)?';
+const POSITIVE_NUMBER_REGEX = '[0-9]+(\\.[0-9]+)?';
+
 const MEASUREMENT_SCHEMA = {
   oneOf: [
-    { type: 'string', pattern: '^[0-9]+(px|%)$' },
+    { type: 'string', pattern: `^${NUMBER_REGEX}(px|%)$` },
     { type: 'string', enum: ['auto'] },
   ],
 };
@@ -3338,15 +3959,39 @@ const PARTIAL_LAYOUT_VEC2_SCHEMA = {
   },
 };
 
+const POSITIVE_MEASUREMENT_SCHEMA = {
+  oneOf: [
+    { type: 'string', pattern: `^${POSITIVE_NUMBER_REGEX}(px|%)$` },
+    { type: 'string', enum: ['auto'] },
+  ],
+};
+
+const LAYOUT_POSITIVE_VEC2_SCHEMA = {
+  type: 'object',
+  properties: {
+    x: POSITIVE_MEASUREMENT_SCHEMA,
+    y: POSITIVE_MEASUREMENT_SCHEMA,
+  },
+  required: ['x', 'y'],
+};
+
+const PARTIAL_LAYOUT_POSITIVE_VEC2_SCHEMA = {
+  type: 'object',
+  properties: {
+    x: POSITIVE_MEASUREMENT_SCHEMA,
+    y: POSITIVE_MEASUREMENT_SCHEMA,
+  },
+};
+
 const NODE_SCHEMA = {
   type: 'object',
   properties: {
     id: { type: 'string', minLength: 1 },
     offset: LAYOUT_VEC2_SCHEMA,
-    padding: LAYOUT_VEC2_SCHEMA,
-    size: PARTIAL_LAYOUT_VEC2_SCHEMA,
-    minSize: PARTIAL_LAYOUT_VEC2_SCHEMA,
-    maxSize: PARTIAL_LAYOUT_VEC2_SCHEMA,
+    padding: LAYOUT_POSITIVE_VEC2_SCHEMA,
+    size: PARTIAL_LAYOUT_POSITIVE_VEC2_SCHEMA,
+    minSize: PARTIAL_LAYOUT_POSITIVE_VEC2_SCHEMA,
+    maxSize: PARTIAL_LAYOUT_POSITIVE_VEC2_SCHEMA,
     aspectRatio: { type: 'number', minimum: 0 },
     visible: { type: 'boolean' },
   },
