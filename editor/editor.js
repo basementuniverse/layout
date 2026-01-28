@@ -16,6 +16,7 @@ const editorState = {
   contextNodeId: null,
   canvasSize: { x: 0, y: 0 },
   mousePosition: { x: 0, y: 0 },
+  clipboard: null,
   dragState: {
     isDragging: false,
     nodeId: null,
@@ -237,6 +238,9 @@ let newToolbarButton,
   saveToolbarButton,
   undoToolbarButton,
   redoToolbarButton,
+  cutToolbarButton,
+  copyToolbarButton,
+  pasteToolbarButton,
   newDockNodeToolbarButton,
   newStackNodeToolbarButton,
   newLeafNodeToolbarButton,
@@ -259,7 +263,10 @@ let treeView, propertiesTitle, propertyEditor, historyView, settingsEditor;
 let statusBar, mouseStatusBarItem, selectedStatusBarItem;
 
 // Context menu items
-let newDockNodeContextMenuItem,
+let cutContextMenuItem,
+  copyContextMenuItem,
+  pasteContextMenuItem,
+  newDockNodeContextMenuItem,
   newStackNodeContextMenuItem,
   newLeafNodeContextMenuItem,
   newDockNodeContextMenuMenu,
@@ -328,6 +335,9 @@ function initialiseEditor() {
   saveToolbarButton = document.getElementById('save-toolbar-button');
   undoToolbarButton = document.getElementById('undo-toolbar-button');
   redoToolbarButton = document.getElementById('redo-toolbar-button');
+  cutToolbarButton = document.getElementById('cut-toolbar-button');
+  copyToolbarButton = document.getElementById('copy-toolbar-button');
+  pasteToolbarButton = document.getElementById('paste-toolbar-button');
   newDockNodeToolbarButton = document.getElementById(
     'new-dock-node-toolbar-button'
   );
@@ -369,6 +379,9 @@ function initialiseEditor() {
   closeSettingsDialogButton = document.getElementById(
     'close-settings-dialog-button'
   );
+  cutContextMenuItem = document.getElementById('cut-context-menu-item');
+  copyContextMenuItem = document.getElementById('copy-context-menu-item');
+  pasteContextMenuItem = document.getElementById('paste-context-menu-item');
   newDockNodeContextMenuItem = document.getElementById(
     'new-dock-node-context-menu-item'
   );
@@ -550,6 +563,47 @@ function setupEventListeners() {
 
   // Keyboard events
   document.addEventListener('keydown', e => {
+    // Cut
+    if (
+      e.ctrlKey &&
+      e.key.toLowerCase() === 'x' &&
+      !e.shiftKey &&
+      editorState.selectedNodeId
+    ) {
+      e.preventDefault();
+      const selectionIsRootNode =
+        editorState.selectedNodeId === editorState.layoutDefinition?.root.id;
+      if (!selectionIsRootNode) {
+        cutNode(editorState.selectedNodeId);
+      }
+    }
+
+    // Copy
+    if (
+      e.ctrlKey &&
+      e.key.toLowerCase() === 'c' &&
+      !e.shiftKey &&
+      editorState.selectedNodeId
+    ) {
+      e.preventDefault();
+      copyNode(editorState.selectedNodeId);
+    }
+
+    // Paste
+    if (
+      e.ctrlKey &&
+      e.key.toLowerCase() === 'v' &&
+      !e.shiftKey &&
+      editorState.selectedNodeId &&
+      editorState.clipboard
+    ) {
+      e.preventDefault();
+      const selectedNode = findNodeById(editorState.selectedNodeId);
+      if (selectedNode && selectedNode.type !== 'dock') {
+        pasteNode(editorState.selectedNodeId);
+      }
+    }
+
     // Delete
     if (e.key === 'Delete' && editorState.selectedNodeId) {
       e.preventDefault();
@@ -831,6 +885,28 @@ async function handleToolbarAction(action) {
       redo();
       break;
 
+    // Clipboard operations
+    case 'cut':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (selectionIsRootNode) {
+        console.warn('Cannot cut root node');
+        break;
+      }
+      cutNode(editorState.selectedNodeId);
+      break;
+    case 'copy':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      copyNode(editorState.selectedNodeId);
+      break;
+    case 'paste':
+      if (!hasLayout) break;
+      if (!hasSelection) break;
+      if (!editorState.clipboard) break;
+      pasteNode(editorState.selectedNodeId);
+      break;
+
     // New node
     case 'new-dock-node':
       if (!hasLayout) break;
@@ -977,6 +1053,28 @@ function handleContextMenuAction(action) {
     : null;
 
   switch (action) {
+    // Clipboard operations
+    case 'cut-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (contextIsRootNode) {
+        console.warn('Cannot cut root node');
+        break;
+      }
+      cutNode(editorState.contextNodeId);
+      break;
+    case 'copy-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      copyNode(editorState.contextNodeId);
+      break;
+    case 'paste-context':
+      if (!hasLayout) break;
+      if (!hasContext) break;
+      if (!editorState.clipboard) break;
+      pasteNode(editorState.contextNodeId);
+      break;
+
     // New node
     case 'new-dock-node-context':
       if (!hasLayout) break;
@@ -2204,6 +2302,36 @@ function updateToolbarButtons() {
   const selectedNodeParent = hasSelection
     ? findParentNodeById(editorState.selectedNodeId)
     : null;
+  const selectionIsRootNode =
+    hasSelection &&
+    editorState.selectedNodeId === editorState.layoutDefinition?.root.id;
+  const hasClipboard = !!editorState.clipboard;
+
+  // Cut toolbar button enabled when a non-root node is selected
+  if (hasSelection && !selectionIsRootNode) {
+    cutToolbarButton?.removeAttribute('disabled');
+  } else {
+    cutToolbarButton?.setAttribute('disabled', '');
+  }
+
+  // Copy toolbar button enabled when a node is selected
+  if (hasSelection) {
+    copyToolbarButton?.removeAttribute('disabled');
+  } else {
+    copyToolbarButton?.setAttribute('disabled', '');
+  }
+
+  // Paste toolbar button enabled when clipboard has content and valid target is selected
+  if (hasClipboard && hasSelection) {
+    // Disable paste for dock nodes
+    if (selectedNode?.type === 'dock') {
+      pasteToolbarButton?.setAttribute('disabled', '');
+    } else {
+      pasteToolbarButton?.removeAttribute('disabled');
+    }
+  } else {
+    pasteToolbarButton?.setAttribute('disabled', '');
+  }
 
   // Delete toolbar button enabled when a non-root node is selected
   if (hasSelection) {
@@ -2368,6 +2496,36 @@ function updateContextMenuButtons() {
   const contextNodeParent = hasContext
     ? findParentNodeById(editorState.contextNodeId)
     : null;
+  const contextIsRootNode =
+    hasContext &&
+    editorState.contextNodeId === editorState.layoutDefinition?.root.id;
+  const hasClipboard = !!editorState.clipboard;
+
+  // Cut context menu item enabled when a non-root node is right-clicked
+  if (hasContext && !contextIsRootNode) {
+    cutContextMenuItem?.removeAttribute('disabled');
+  } else {
+    cutContextMenuItem?.setAttribute('disabled', '');
+  }
+
+  // Copy context menu item enabled when a node is right-clicked
+  if (hasContext) {
+    copyContextMenuItem?.removeAttribute('disabled');
+  } else {
+    copyContextMenuItem?.setAttribute('disabled', '');
+  }
+
+  // Paste context menu item enabled when clipboard has content and valid target is right-clicked
+  if (hasClipboard && hasContext) {
+    // Disable paste for dock nodes
+    if (contextNode?.type === 'dock') {
+      pasteContextMenuItem?.setAttribute('disabled', '');
+    } else {
+      pasteContextMenuItem?.removeAttribute('disabled');
+    }
+  } else {
+    pasteContextMenuItem?.setAttribute('disabled', '');
+  }
 
   // Check if a layout is available
   if (editorState.layout) {
@@ -3797,6 +3955,211 @@ function updateNode(nodeId, nodeData, propertyName = '') {
   } catch (error) {
     console.error('Error updating node:', error);
   }
+}
+
+function cutNode(nodeId) {
+  if (!editorState.layoutDefinition || !nodeId) {
+    console.warn('No node selected for cut');
+    return;
+  }
+
+  // Can't cut root node
+  if (nodeId === editorState.layoutDefinition.root.id) {
+    console.warn('Cannot cut root node');
+    return;
+  }
+
+  console.log('Cutting node:', nodeId);
+
+  try {
+    // First copy the node to clipboard
+    copyNode(nodeId);
+
+    // Then delete it
+    if (editorState.clipboard) {
+      deleteNode(nodeId);
+      console.log('Node cut successfully');
+    }
+  } catch (error) {
+    console.error('Error cutting node:', error);
+  }
+}
+
+function copyNode(nodeId) {
+  if (!editorState.layoutDefinition || !nodeId) {
+    console.warn('No node selected for copy');
+    return;
+  }
+
+  console.log('Copying node:', nodeId);
+
+  try {
+    // Find the node in the layout definition
+    const nodeToCopy = findNodeInDefinition(
+      editorState.layoutDefinition.root,
+      nodeId
+    );
+
+    if (!nodeToCopy) {
+      console.error('Node not found for copy:', nodeId);
+      return;
+    }
+
+    // Deep clone the node (including all children)
+    editorState.clipboard = JSON.parse(JSON.stringify(nodeToCopy));
+
+    updateToolbarButtons();
+    updateContextMenuButtons();
+
+    console.log('Node copied to clipboard:', editorState.clipboard);
+  } catch (error) {
+    console.error('Error copying node:', error);
+  }
+}
+
+function pasteNode(targetNodeId) {
+  if (!editorState.clipboard) {
+    console.warn('Clipboard is empty');
+    return;
+  }
+
+  if (!editorState.layoutDefinition || !targetNodeId) {
+    console.warn('No target node selected for paste');
+    return;
+  }
+
+  console.log('Pasting into node:', targetNodeId);
+
+  try {
+    const snapshot = preActionSnapshot('Paste node');
+
+    // Find the target node
+    const targetNode = findNodeInDefinition(
+      editorState.layoutDefinition.root,
+      targetNodeId
+    );
+
+    if (!targetNode) {
+      console.error('Target node not found:', targetNodeId);
+      return;
+    }
+
+    // Clone the clipboard content to avoid mutating it
+    const nodeToPaste = JSON.parse(JSON.stringify(editorState.clipboard));
+
+    // Generate new IDs for the pasted node and all its children
+    regenerateNodeIds(nodeToPaste);
+
+    // Handle pasting based on target node type
+    if (targetNode.type === 'leaf') {
+      // Replace the leaf node with clipboard contents
+      // Find parent and replace
+      if (targetNodeId === editorState.layoutDefinition.root.id) {
+        // Replacing root
+        editorState.layoutDefinition.root = nodeToPaste;
+      } else {
+        const parentNode = findParentNodeInDefinition(
+          editorState.layoutDefinition.root,
+          targetNodeId
+        );
+
+        if (!parentNode) {
+          console.error('Parent node not found for replacement');
+          return;
+        }
+
+        replaceNodeInParent(parentNode, targetNodeId, nodeToPaste);
+      }
+    } else if (targetNode.type === 'stack') {
+      // Append to the stack's children array
+      if (!targetNode.children) {
+        targetNode.children = [];
+      }
+      targetNode.children.push(nodeToPaste);
+    } else if (targetNode.type === 'dock') {
+      console.warn('Cannot paste into dock node');
+      return;
+    }
+
+    // Reload layout with updated definition
+    const updatedDefinition = editorState.layoutDefinition;
+    updateLayout(updatedDefinition);
+
+    // Select the newly pasted node
+    editorState.selectedNodeId = nodeToPaste.id;
+    editorState.dirty = true;
+
+    updateTitle();
+    updatePropertyEditor();
+    updateStatusBar();
+    updateTreeView();
+    updateToolbarButtons();
+    updateContextMenuButtons();
+
+    postActionSnapshot(snapshot);
+
+    console.log('Node pasted successfully');
+  } catch (error) {
+    console.error('Error pasting node:', error);
+  }
+}
+
+function regenerateNodeIds(node, prefix = 'node') {
+  // Generate new ID for this node
+  node.id = generateUniqueId(prefix);
+
+  // Recursively regenerate IDs for children
+  if (node.type === 'stack' && node.children) {
+    for (const child of node.children) {
+      regenerateNodeIds(child, prefix);
+    }
+  } else if (node.type === 'dock') {
+    const positions = [
+      'topLeft',
+      'topCenter',
+      'topRight',
+      'leftCenter',
+      'center',
+      'rightCenter',
+      'bottomLeft',
+      'bottomCenter',
+      'bottomRight',
+    ];
+    for (const pos of positions) {
+      if (node[pos]) {
+        regenerateNodeIds(node[pos], prefix);
+      }
+    }
+  }
+}
+
+function replaceNodeInParent(parentNode, targetId, newNode) {
+  if (parentNode.type === 'stack' && parentNode.children) {
+    const index = parentNode.children.findIndex(child => child.id === targetId);
+    if (index !== -1) {
+      parentNode.children[index] = newNode;
+      return true;
+    }
+  } else if (parentNode.type === 'dock') {
+    const positions = [
+      'topLeft',
+      'topCenter',
+      'topRight',
+      'leftCenter',
+      'center',
+      'rightCenter',
+      'bottomLeft',
+      'bottomCenter',
+      'bottomRight',
+    ];
+    for (const pos of positions) {
+      if (parentNode[pos] && parentNode[pos].id === targetId) {
+        parentNode[pos] = newNode;
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function deleteNode(nodeId) {

@@ -55,6 +55,28 @@
               ></e2-toolbar-button>
               <e2-toolbar-separator></e2-toolbar-separator>
               <e2-toolbar-button
+                id="cut-toolbar-button"
+                label="Cut"
+                icon="✂️"
+                action="cut"
+                disabled
+              ></e2-toolbar-button>
+              <e2-toolbar-button
+                id="copy-toolbar-button"
+                label="Copy"
+                icon="📋"
+                action="copy"
+                disabled
+              ></e2-toolbar-button>
+              <e2-toolbar-button
+                id="paste-toolbar-button"
+                label="Paste"
+                icon="📄"
+                action="paste"
+                disabled
+              ></e2-toolbar-button>
+              <e2-toolbar-separator></e2-toolbar-separator>
+              <e2-toolbar-button
                 id="new-dock-node-toolbar-button"
                 label="Dock"
                 icon="🔽"
@@ -375,6 +397,28 @@
 
         <!-- Context menu -->
         <e2-context-menu target=".has-nodes">
+          <e2-context-menu-item
+            id="cut-context-menu-item"
+            label="Cut"
+            icon="✂️"
+            action="cut-context"
+            shortcut="Ctrl+X"
+          ></e2-context-menu-item>
+          <e2-context-menu-item
+            id="copy-context-menu-item"
+            label="Copy"
+            icon="📋"
+            action="copy-context"
+            shortcut="Ctrl+C"
+          ></e2-context-menu-item>
+          <e2-context-menu-item
+            id="paste-context-menu-item"
+            label="Paste"
+            icon="📄"
+            action="paste-context"
+            shortcut="Ctrl+V"
+          ></e2-context-menu-item>
+          <e2-context-menu-separator></e2-context-menu-separator>
           <e2-context-menu-item
             id="new-dock-node-context-menu-item"
             label="Dock"
