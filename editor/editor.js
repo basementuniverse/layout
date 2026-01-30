@@ -2972,6 +2972,10 @@ async function saveLayout() {
   // Get the layout name if not already set
   if (!editorState.layoutName) {
     editorState.layoutName = await namePrompt.show();
+    // If user cancelled the prompt, abort the save operation
+    if (!editorState.layoutName) {
+      return;
+    }
   }
 
   // Serialize the layout data and create a Blob

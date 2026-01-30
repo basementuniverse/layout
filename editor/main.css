@@ -77,7 +77,8 @@ aside.history e2-collapsible-panel {
 }
 
 aside.history e2-list-view {
-  height: 100%;
+  max-height: calc(100vh - 110px);
+  overflow-y: auto;
   --header-visible: 'no';
 }
 
